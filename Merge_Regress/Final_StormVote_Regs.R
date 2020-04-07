@@ -76,7 +76,7 @@ OUT = stargazer(Table1_House, style = "aer", type = "latex", column.sep.width = 
                 title = "Storm Damages Over Different Time Lags on Voting",
                 dep.var.labels = "Positive Environmental Vote",
                 covariate.labels = c("0-15","15-30","30-45","0-30","30-60","60-90"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_1.tex", append = TRUE)
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_1.tex", append = TRUE)
 
  
 
@@ -94,7 +94,7 @@ OUT = stargazer(Table1_Senate, style = "aer", type = "latex", column.sep.width =
                 title = "Storm Damages Over Different Time Lags on Voting",
                 dep.var.labels = "Positive Environmental Vote",
                 covariate.labels = c("0-30","30-60","60-90","0-15","15-30","30-45"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_1.tex", append = TRUE)
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_1.tex", append = TRUE)
 
 
 #--------------------------------------Table 2: Discrete and Continuous Lags-------------------------------------------#
@@ -115,7 +115,7 @@ OUT = stargazer(Table2House, style = "aer", type = "latex", column.sep.width = "
                 title = "Heterogeneous Effects By Severity of Storm Damages",
                 dep.var.labels = "Positive Environmental Vote",
                 covariate.labels = c("/> 0", "$<$1 Mil.", "1-50 Mil.", "50-400 Mil.","$>$400 Mil","Interaction"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_2.tex", append = TRUE)
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_2.tex", append = TRUE)
 
 
 Table2SENATE = list(
@@ -136,7 +136,7 @@ OUT = stargazer(Table2SENATE, style = "aer", type = "latex", column.sep.width = 
                 dep.var.labels = "Positive Environmental Vote",
                 covariate.labels = c("$>0$","$<$1 Mil", "1-50 Mil.", "50-400 Mil", "$>$400 Mil.", "Interaction"))
                
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_2.tex", append = TRUE)
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_2.tex", append = TRUE)
 
 
 #--------------------------------------------------------Table 3: Party Interaction------------------------------#
@@ -159,8 +159,9 @@ OUT = stargazer(Table3House, style = "aer", type = "latex", column.sep.width = "
                 covariate.labels = c("$>0$","$>$1 Mil.","1-50 Mil.", "50-400 Mil.", "$>$400 Mil.", 
                                      "$>0$xREP", "$>$1 Mil x REP", "1-50 Mil x REP", "50-400 Mil x REP", "$>$400 Mil x REP"))
                 
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_3.tex", append = TRUE)
-                
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_3.tex", append = TRUE)
+
+linearHypothesis(Table3House$L6, "BIN_30_Huge + REP:BIN_30_Huge = 0")               
                 
 Table3Senate = list(
   L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
@@ -173,7 +174,7 @@ Table3Senate = list(
   L6 = plm(POS_VOTE ~ BIN_30_Mil*REP + BIN_30_FiftyMil*REP + BIN_30_FHMil*REP + BIN_30_Huge*REP + factor(Year) + factor(SEASON), 
            data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
 )
-
+linearHypothesis(Table3House$L6, "BIN_30_Mil = BIN_30_Huge")
 linearHypothesis(Table3Senate$L2, c("Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0"))
 
 Table3SenateSE = lapply(X = Table3Senate, GET_SEs)
@@ -184,52 +185,50 @@ OUT = stargazer(Table3Senate, style = "aer", type = "latex", column.sep.width = 
                 covariate.labels = c("$>0$","$>$1 Mil.","1-50 Mil.", "50-400 Mil.", "$>$400 Mil.", 
                                      "$>0$xREP", "$>$1 Mil x REP", "1-50 Mil x REP", "50-400 Mil x REP", "$>$400 Mil x REP"))
                 
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/ALL/Table_3.tex", append = TRUE)
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_3.tex", append = TRUE)
 
-
-
-
-Test = list(
-  
-)
-
-
+linearHypothesis(Table3Senate$L2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0")
+linearHypothesis(Table3Senate$L6, "BIN_30_Mil + BIN_30_Mil:REP = 0")
+linearHypothesis(Table3Senate$L6, "BIN_30_FiftyMil + REP:BIN_30_FiftyMil = 0")
+linearHypothesis(Table3Senate$L6, "BIN_30_Huge + REP:BIN_30_Huge = 0")
 #---------------------------------------------------Table 4: Differentiate Types of Storms----------------------------------#
 Table4House = list(
   L1 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
   L2 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*Lag_0_30_END_PLACEBO*REP - REP*Lag_0_30_END_PLACEBO - Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_PLACEBO_BIN + factor(Year),
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
+ # L3 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*Lag_0_30_END_PLACEBO*REP - REP*Lag_0_30_END_PLACEBO - Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_PLACEBO_BIN + factor(Year),
+#           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
   L4 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*Lag_0_30_END_NOT_PLACEBO*REP - REP*Lag_0_30_END_NOT_PLACEBO - Lag_0_30_END_NOT_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year),
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+  L5 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+#  L6 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*Lag_0_30_END_NOT_PLACEBO*REP - REP*Lag_0_30_END_NOT_PLACEBO - Lag_0_30_END_NOT_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year),
+#           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
 )
 
 Table4HouseSE = lapply(X = Table4House, GET_SEs)
-OUT = stargazer(Table4House, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table4HouseSE,
-                title = "Cold-Related v. Non-Cold Storms",
-                dep.var.labels = "Positive Environmental Vote")
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/HOUSE/HOUSE_TABLE4.tex", append = TRUE)
+OUT = stargazer(Table4House, style = "aer", type = "latex", column.sep.width = "4", no.space = TRUE,
+                omit = "factor*", keep.stat = c("n","adj.rsq", "rsq"), se = Table4HouseSE,
+                title = "Cold-Related v. Non-Cold Storms -- House of Representatives",
+                dep.var.labels = "Positive Environmental Vote",
+                covariate.labels = c("Cold $>0$", "Warm $>0$", "Cold $>0$ x Rep", "Warm $>0$ x Rep"))
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table4.tex", append = TRUE)
 
 Table4Senate = list(
   L1 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
   L2 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*Lag_0_30_END_PLACEBO*REP - REP*Lag_0_30_END_PLACEBO - Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_PLACEBO_BIN + factor(Year),
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
+#  L3 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*Lag_0_30_END_PLACEBO*REP - REP*Lag_0_30_END_PLACEBO - Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_PLACEBO_BIN + factor(Year),
+#           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
   L4 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*Lag_0_30_END_NOT_PLACEBO*REP - REP*Lag_0_30_END_NOT_PLACEBO - Lag_0_30_END_NOT_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year),
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+  L5 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+#  L6 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*Lag_0_30_END_NOT_PLACEBO*REP - REP*Lag_0_30_END_NOT_PLACEBO - Lag_0_30_END_NOT_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year),
+#           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
 )
 
 Table4SenateSE = lapply(X = Table4Senate, GET_SEs)
 OUT = stargazer(Table4Senate, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
                 omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table4SenateSE,
                 title = "Cold-Related v. Non-Cold Storms - Senate",
-                dep.var.labels = "Positive Environmental Vote")
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/HOUSE/HOUSE_TABLE4.tex", append = TRUE)
+                dep.var.labels = "Positive Environmental Vote",
+                covariate.labels = c("Cold $>0$", "Warm $>0$", "Cold $>0$ x Rep", "Warm $>0$ x Rep"))
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table4.tex", append = TRUE)
 
 
 
