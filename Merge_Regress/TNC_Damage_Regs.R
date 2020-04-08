@@ -38,22 +38,7 @@ TNC_CLEAN_WEEK_FINAL = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.
     BIN_30_Huge = ifelse(Lag_0_30 > log(400000000), 1,0)) %>%
   ungroup()
 
-#-1. Build Time Trend
-
-Table0 = list(
-  A = plm(COUNT ~ Lag_0_15_BIN + factor(YEAR) + factor(MONTH) , data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
-    coeftest(., vcov = vcovHC(., type="HC1")),
-  B = plm(COUNT ~ Lag_0_15_BIN + Lag_15_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
-    coeftest(., vcov = vcovHC(., type="HC1")),
-  C = plm(COUNT ~ Lag_0_15_BIN + Lag_15_30_BIN + Lag_30_45_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
-    coeftest(., vcov = vcovHC(., type="HC1")),
-  D = plm(COUNT ~ Lag_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
-    coeftest(., vcov = vcovHC(., type="HC1")),
-  E = plm(COUNT ~ Lag_0_30_BIN + Lag_30_60_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
-    coeftest(., vcov = vcovHC(., type="HC1"))
-) %>%
-  stargazer::stargazer(.,type = "latex", style = "aer", column.sep.width = "1", omit = "factor*", title = "Weeks: Conditional - Count")
-
+#Table 1 -- Different Time Lags
 Table1_TNC= list(
   D = plm(COUNT ~ Lag_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
   E = plm(COUNT ~ Lag_0_30_BIN + Lag_30_60_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
@@ -90,17 +75,36 @@ cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_TNC/Table2.t
 Table3_TNC = list(
   A = plm(COUNT ~ Lag_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
   B = plm(COUNT ~ Lag_Placebo_0_30_BIN + factor(YEAR) + factor(DEC), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
-  C = plm(COUNT ~ Lag_Not_Placebo_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
-  D = plm(COUNT ~ Lag_0_30_BIN*Lag_0_30 - Lag_0_30 + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
-  E = plm(COUNT ~ Lag_Placebo_0_30_BIN*Lag_Placebo_0_30 - Lag_Placebo_0_30 + factor(YEAR) + factor(DEC), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
-  G = plm(COUNT ~ Lag_Not_Placebo_0_30_BIN*Lag_Not_Placebo_0_30 - Lag_Not_Placebo_0_30 + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW"))
+  C = plm(COUNT ~ Lag_Not_Placebo_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW"))
+#  D = plm(COUNT ~ Lag_0_30_BIN*Lag_0_30 - Lag_0_30 + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
+#  E = plm(COUNT ~ Lag_Placebo_0_30_BIN*Lag_Placebo_0_30 - Lag_Placebo_0_30 + factor(YEAR) + factor(DEC), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
+#  G = plm(COUNT ~ Lag_Not_Placebo_0_30_BIN*Lag_Not_Placebo_0_30 - Lag_Not_Placebo_0_30 + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW"))
 )
 Table3_TNC_SE = lapply(X = Table3_TNC, GET_SEs)
 OUT = stargazer(Table3_TNC, style = "aer", type = "latex", column.sep.width = "3", no.space = TRUE,
                 omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table3_TNC_SE,
                 title = "Heterogeneity By Storm Severity",
-                covariate.labels = c("ALL_Bin","Cold_Bin","Not Cold Bin","All Int","Cold Int","Not Cold Int"),
+                covariate.labels = c("ALL_Bin","Cold_Bin","Not Cold Bin"),
                 dep.var.labels = "Count of TNC Donations")
 
+cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_TNC/Table3.tex", append = TRUE)
 
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_TNC/Table2.tex", append = TRUE)
+
+
+#Appendix
+
+#-1. Build Time Trend
+Table0 = list(
+  A = plm(COUNT ~ Lag_0_15_BIN + factor(YEAR) + factor(MONTH) , data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
+    coeftest(., vcov = vcovHC(., type="HC1")),
+  B = plm(COUNT ~ Lag_0_15_BIN + Lag_15_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
+    coeftest(., vcov = vcovHC(., type="HC1")),
+  C = plm(COUNT ~ Lag_0_15_BIN + Lag_15_30_BIN + Lag_30_45_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
+    coeftest(., vcov = vcovHC(., type="HC1")),
+  D = plm(COUNT ~ Lag_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
+    coeftest(., vcov = vcovHC(., type="HC1")),
+  E = plm(COUNT ~ Lag_0_30_BIN + Lag_30_60_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")) %>%
+    coeftest(., vcov = vcovHC(., type="HC1"))
+) %>%
+  stargazer::stargazer(.,type = "latex", style = "aer", column.sep.width = "1", omit = "factor*", title = "Weeks: Conditional - Count")
+
