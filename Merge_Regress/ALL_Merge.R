@@ -35,12 +35,10 @@ ALL_Years = stargazer(ALL_Years, style = "aer",type = "latex",
                      covariate.labels = c("House Vote", "30-Day Damage (House)", "Senate Vote", "30-Day Damage (Senate)"),
                      out = "~/Desktop/ECON Thesis/OUTPUT/DATA_Section/Table_of_Means_ALL.tex")
 
-
 SENATE_DAT_ALL = SENATE_DAT %>%
   dplyr::select(-contains("BEGIN")) %>%
   mutate(DATE = as.Date(DATE)) %>%
   filter(DATE > (min(TNC_CLEAN_DAY$GIFT_DATE) + 60) & DATE < (max(TNC_CLEAN_DAY$GIFT_DATE) - 60))  #Need to Filter to Years that Have TNC_DAT
-
 
 #Now Import the TNC_Clean DataSet
 TNC_CLEAN_DAY = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Day.csv") %>%
@@ -74,6 +72,7 @@ names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
 colnames(X) = names
 
 SENATE_DAT_ALL = bind_cols(SENATE_DAT_ALL, X)
+write.csv(SENATE_DAT_ALL, file = "~/Google Drive/DATA/ECON/CLEAN/FULL_LAGGED/Sen_All_Lags.csv")
 
 
 HOUSE_DAT_ALL = HOUSE_DAT %>%
@@ -89,7 +88,7 @@ names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
                  ~ str_c("TNC_Lag",as.character(.x),as.character(.y),sep = "_"))
 colnames(X) = names
 HOUSE_DAT_ALL = bind_cols(HOUSE_DAT_ALL, X)
-glimpse(HOUSE_DAT_ALL)
+write.csv(HOUSE_DAT_ALL, file = "~/Google Drive/DATA/ECON/CLEAN/FULL_LAGGED/House_All_Lags.csv")
 
 
 #Last Panel For Table of Means
@@ -113,51 +112,4 @@ ALL = as.data.frame(ALL) %>%
             covariate.labels = c("House Vote", "30-Day Lagged TNC (House)", "30-Day Lagged Damage House","Senate Vote", "30-Day Lagged TNC (Senate)", "30-Day Lagged Damage (Senate)"),
             out = "~/Desktop/ECON Thesis/OUTPUT/DATA_Section/Table_of_Means.tex")
 
-SENATE_DAT_ALL = SENATE_DAT_ALL %>%
-  mutate_at(vars(contains("Lag_")), ~ log(.+1)) %>%
-  mutate_at(vars(contains("Lag_")), .funs = list(BIN = ~ifelse(.>0,1,0))) %>%
-  mutate(BIN_30_Mil = ifelse( (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)),1,0),
-         BIN_30_G_MIL = ifelse(Lag_0_30_END > log(1000000),1,0),
-         BIN_30_FiftyMil = ifelse( (Lag_0_30_END > log(1000000) & Lag_0_30_END < log(50000000)), 1,0),
-         BIN_30_G_FiftyMil = ifelse(Lag_0_30_END >log(50000000),1,0),
-         BIN_30_FHMil = ifelse( (Lag_0_30_END > log(50000000) & Lag_0_30_END < log(400000000)), 1,0),
-         BIN_30_Huge = ifelse(Lag_0_30_END > log(400000000), 1,0)) %>%
-  mutate(DATE = as.Date(DATE)) %>%
-  mutate(SEASON = case_when(
-    MON_NUM %in% c(12,1,2,3) ~ "WINTER",
-    MON_NUM %in% c(4,5,6) ~ "SPRING",
-    MON_NUM %in% c(7,8,9) ~ "SUMMER",
-    MON_NUM %in% c(10,11,12) ~ "FALL")) %>%
-  mutate(PANEL_VAR = 100000*Year + ROLL_CALL)  %>%
-  mutate(REP = ifelse(Party == "R",1,0))
 
-
-HOUSE_DAT_ALL = HOUSE_DAT_ALL %>%
-  mutate_at(vars(starts_with("Lag_")), ~ log(.+1)) %>%
-  mutate_at(vars(contains("Lag_")), .funs = list(BIN = ~ifelse(.>0,1,0))) %>%
-  mutate(BIN_30_Mil = ifelse( (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)),1,0),
-         BIN_30_G_MIL = ifelse(Lag_0_30_END > log(1000000),1,0),
-         BIN_30_FiftyMil = ifelse( (Lag_0_30_END > log(1000000) & Lag_0_30_END < log(50000000)), 1,0),
-         BIN_30_G_FiftyMil = ifelse(Lag_0_30_END >log(50000000),1,0),
-         BIN_30_FHMil = ifelse( (Lag_0_30_END > log(50000000) & Lag_0_30_END < log(400000000)), 1,0),
-         BIN_30_Huge = ifelse(Lag_0_30_END > log(400000000), 1,0)) %>%
-  mutate(DATE = as.Date(DATE)) %>%
-  mutate(SEASON = case_when(
-    MON_NUM %in% c(12,1,2,3) ~ "WINTER",
-    MON_NUM %in% c(4,5,6) ~ "SPRING",
-    MON_NUM %in% c(7,8,9) ~ "SUMMER",
-    MON_NUM %in% c(10,11,12) ~ "FALL")) %>%
-  mutate(PANEL_VAR = 100000*Year + ROLL_CALL) %>%
-  mutate(Member.of.Congress = case_when(
-    Member.of.Congress == "Rogers, Mike"  & State == "AL" ~ "Rogers, Mike_AL",
-    Member.of.Congress == "Brown, George" & State == "CO" ~ "Brown, George_CO",
-    TRUE ~ Member.of.Congress)) %>% #This is an Extra Catch -- didnt seem to get caught the first time
-  mutate(REP = ifelse(Party == "R",1,0))
-
-
-
-
-#-------------------------------------------Now Try Running These Regressions-------------------------------#
-
-T1 = plm(POS_VOTE ~ Lag_0_30_END + TNC_Lag_0_30+ factor(Year) + factor(MON) , data = HOUSE_DAT_ALL, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-summary(T1)
