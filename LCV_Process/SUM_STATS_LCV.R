@@ -19,7 +19,18 @@ SEN %>%
   xlab("Year") + ylab("Average LCV Score") +
   ggtitle("LCV Scores By Party Over Time")
 
-#Note: Trend Looks Similar in the House
+#Note: Trend Looks Similar in the House -- Appendix Figure
+HOUSE %>%
+  group_by(Party, Year) %>%
+  summarise(SCORE = mean(Current.Score, na.rm = TRUE)) %>%
+  ggplot() +
+  geom_line(aes(x = Year, y = SCORE, col = Party)) +
+  scale_color_manual(values=group.colors) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  xlab("Year") + ylab("Average LCV Score") +
+  ggtitle("LCV Scores By Party Over Time")
+
        
 #Individual Trends Over Time for Notable, Long-Serving Senators
 People = c("Biden, Joe", "Conrad, Kent", "Hatch, Orrin", "Collins, Susan")
