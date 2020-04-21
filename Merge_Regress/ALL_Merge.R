@@ -16,16 +16,20 @@ library(dplyr)
 SEN_DAT_ToM = SENATE_DAT %>%
   dplyr::select(POS_VOTE, Lag_0_30_END) %>%
   rename(Votes_Senate = POS_VOTE, Damage_Senate =Lag_0_30_END) %>%
+  mutate(Damage_Senate = Damage_Senate/1000000) %>%
   filter(Votes_Senate != 'NA') %>%
   as.matrix()
 H_DAT_ToM = HOUSE_DAT %>%
   dplyr::select(POS_VOTE, Lag_0_30_END) %>%
-  rename(Votes_House = POS_VOTE, Damage_House =Lag_0_30_END) %>%
+  rename(Votes_House = POS_VOTE, Damage_House = Lag_0_30_END) %>%
+  mutate(Damage_House = Damage_House/1000000) %>%
   filter(Votes_House != 'NA') %>%
   as.matrix()
+
 ALL_Years = matrix(nrow = nrow(H_DAT_ToM), ncol = 4)
-ALL_Years[,1:2] = H_DAT_ToM
-ALL_Years[1:nrow(SEN_DAT_ToM),3:4] = SEN_DAT_ToM
+head(ALL_Years)
+ALL_Years[1:nrow(H_DAT_ToM),1:2] = H_DAT_ToM
+ALL_Years[1:(nrow(SEN_DAT_ToM)),3:4] = SEN_DAT_ToM
 colnames(ALL_Years) = c("Vote_House","Damage_House","Vote_Sen","Damage_Sen")
 ALL_Years = as.data.frame(ALL_Years) 
 ALL_Years = stargazer(ALL_Years, style = "aer",type = "latex",
@@ -92,12 +96,20 @@ write.csv(HOUSE_DAT_ALL, file = "~/Google Drive/DATA/ECON/CLEAN/FULL_LAGGED/Hous
 
 
 #Last Panel For Table of Means
+
+#Start by Re-reading in data:
+HOUSE_DAT_ALL  = read.csv("~/Google Drive/DATA/ECON/CLEAN/FULL_LAGGED/House_All_Lags.csv") %>%  mutate(DATE = as.Date(DATE))
+SENATE_DAT_ALL = read.csv("~/Google Drive/DATA/ECON/CLEAN/FULL_LAGGED/Sen_All_Lags.csv")   %>%  mutate(DATE = as.Date(DATE))
+
+
 H_ToM = HOUSE_DAT_ALL %>%
   dplyr::select(POS_VOTE, TNC_Lag_0_30, Lag_0_30_END) %>%
   filter(!is.na(POS_VOTE)) %>%
+  mutate(Lag_0_30_END = Lag_0_30_END/1000000) %>%
   as.matrix()
 S_ToM = SENATE_DAT_ALL %>%
   dplyr::select(POS_VOTE, TNC_Lag_0_30, Lag_0_30_END) %>%
+  mutate(Lag_0_30_END = Lag_0_30_END/1000000) %>%
   filter(!is.na(POS_VOTE)) %>%
   as.matrix()
 
