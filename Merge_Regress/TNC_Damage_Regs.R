@@ -18,11 +18,12 @@ library(stargazer)
 
 
 #Log and Binning
-TNC_CLEAN_WEEK_FINAL = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.csv") %>%
+
+TNC_CLEAN_WEEK_FINAL = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.csv") 
+TNC_CLEAN_WEEK_FINAL = TNC_CLEAN_WEEK_FINAL %>%
+  dplyr::mutate_at(which(str_detect(names(TNC_CLEAN_WEEK_FINAL), "Lag_")),  funs(log(.+1))) %>%
+  dplyr::mutate_at(which(str_detect(names(TNC_CLEAN_WEEK_FINAL), "Lag_")), .funs = list(BIN = ~ ifelse(.>0,1,0))) %>%
   mutate(WEEK_LOW = as.Date(WEEK_LOW)) %>%
-  mutate_at(vars(contains("Lag")), ~ log(.+1)) %>%
-  mutate_at(vars(contains("Lag")), .funs = list(BIN = ~ifelse(.>0,1,0))) %>%
-  mutate_at(vars(5:14), .funs = list(MED = ~ifelse(.>median(.),1,0))) %>%
   mutate(AMT_LOG = log(AMT + 1)) %>%
   mutate(PANEL_VAR = as.numeric(WEEK_LOW)) %>%
   mutate(YEAR = year(WEEK_LOW),
@@ -37,6 +38,17 @@ TNC_CLEAN_WEEK_FINAL = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.
     BIN_30_FHMil = ifelse( (Lag_0_30 > log(50000000) & Lag_0_30 < log(400000000)), 1,0),
     BIN_30_Huge = ifelse(Lag_0_30 > log(400000000), 1,0)) %>%
   ungroup()
+
+#Table of Means for This Section
+TNC_CLEAN_WEEK_FINAL %>%
+  select(COUNT,Lag_0_30) %>%
+  mutate(Lag_0_30 = exp(Lag_0_30)/1000000) %>%
+  stargazer(., type = "latex",style = "aer", 
+           title = "Summary Stats for TNC",
+           summary.stat = c("n", "mean","min","max","sd"),
+           covariate.labels = c("Donation Count", "30-Day Lagged Damage"),
+           out = "~/Desktop/ECON Thesis/OUTPUT/DATA_Section/Table_of_Means_TNC.tex")
+
 
 #Table 1 -- Different Time Lags
 Table1_TNC= list(
@@ -72,6 +84,11 @@ OUT = stargazer(Table2_TNC, style = "aer", type = "latex", column.sep.width = "3
 cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_TNC/Table2.tex", append = TRUE)
 
 
+
+Table2_TNC$D
+linearHypothesis(Table2_TNC$D, "BIN_30_Mil = BIN_30_FHMil")
+
+
 Table3_TNC = list(
   A = plm(COUNT ~ Lag_0_30_BIN + factor(YEAR) + factor(MONTH), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
   B = plm(COUNT ~ Lag_Placebo_0_30_BIN + factor(YEAR) + factor(DEC), data = TNC_CLEAN_WEEK_FINAL, model = "within", index = c("state","WEEK_LOW")),
@@ -88,6 +105,8 @@ OUT = stargazer(Table3_TNC, style = "aer", type = "latex", column.sep.width = "3
                 dep.var.labels = "Count of TNC Donations")
 
 cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_TNC/Table3.tex", append = TRUE)
+
+
 
 
 
