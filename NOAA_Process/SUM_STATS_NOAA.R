@@ -18,6 +18,22 @@ table(DAT_CLEAN$DAMAGE_PROPERTY >0)[2]/nrow(DAT_CLEAN)
 range(DAT_CLEAN$DAMAGE_PROPERTY, na.rm = TRUE)
 
 
+glimpse(DAT_CLEAN)
+#Distribution of Weather Events Across Seasons
+DAT_CLEAN %>%
+  mutate(SEASON = case_when(
+    MONTH %in% c(12,1,2,3) ~ "WINTER",
+    MONTH %in% c(4,5,6) ~ "SPRING",
+    MONTH %in% c(7,8,9) ~ "SUMMER",
+    MONTH %in% c(10,11,12) ~ "FALL")) %>%
+  group_by(SEASON, PLACEBO_EVENT) %>% summarize(COUNT = n()/28, AMT = sum(DAMAGE_PROPERTY,na.rm = TRUE)/(28*1000000)) %>%
+  pivot_wider(names_from = PLACEBO_EVENT, values_from = c(COUNT,AMT)) %>%
+  mutate(COUNT_TOTAL = COUNT_0+COUNT_1, AMT_TOTAL = AMT_0+AMT_1) %>%
+  select(1,6,7,2,4,3,5) %>%
+  xtable(., caption = "Average Yearly Count and Damage Amount by Season") %>%
+  print(., file = "~/Desktop/ECON Thesis/OUTPUT/DATA_Section/Appendix/Storms_by_season.tex")
+
+
 #Identifying Above Median Damage States Over Time
 ABOVE_MED_STATES = DAT_CLEAN %>%
   group_by(STATE) %>%
