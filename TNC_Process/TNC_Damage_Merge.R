@@ -83,13 +83,9 @@ names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
 
 
 colnames(X_Placebo) = names
-glimpse(X_Placebo)
+
 
 TNC_CLEAN_WEEK = bind_cols(TNC_CLEAN_WEEK, X_Placebo)
-
-glimpse(TNC_CLEAN_WEEK)
-
-
 
 
 #Creating Not Placebo
@@ -108,19 +104,6 @@ TNC_CLEAN_WEEK = bind_cols(TNC_CLEAN_WEEK,X_Not_Placebo)
 
 write.csv(TNC_CLEAN_WEEK,"~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.csv")
 
-
-#Table of Means for TNC Regressions
-TNC_CLEAN_WEEK = read.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_Merged_Week.csv")
-TNC_ToM = TNC_CLEAN_WEEK %>%
-  ungroup() %>%
-  dplyr::select(COUNT,Lag_0_30) %>%
-  as.data.frame()
-TNC_ToM = stargazer(TNC_ToM, style = "aer", type = "latex",
-                    summary.stat = c("n", "mean","min","max","sd"),
-                    column.sep.width = "1",
-                    title = "Summary Statistics for TNC Donations Data",
-                    covariate.labels = c("Donation Count", "30-Day Lagged Damages"))
-cat(paste(TNC_ToM, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/DATA_Section/Table_of_Means_TNC.tex", append = TRUE)
 
 #------------------------------------------------Analyzing Results-----------------------------------#
 #---------------------------------------------------------------------------------------------------#
