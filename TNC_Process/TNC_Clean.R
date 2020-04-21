@@ -21,11 +21,20 @@ TNC = fread("~/Google Drive/DATA/ECON/RAW/TNC_RAW.csv")
 STATES = read_xlsx("~/Google Drive/DATA/ECON/STATES_REGIONS.xlsx") %>%
   rename(CODE = `State Code`)
 
+#Number of Observations
+nrow(TNC)
+
+#Preliminary Cleaning
 TNC_CLEAN = TNC %>%
   filter(str_length(state) > 1) %>%
   mutate(state = toupper(state)) %>%
   filter(state %in% c(STATES$CODE)) %>%  #Filtering to 50 States
-  filter(donor_type == "Individual") %>% #Remove Non-Individual Donrs
+  filter(donor_type == "Individual")  #Remove Non-Individual Donors
+
+#Intermediate Stat: How Many Did this remove?
+nrow(TNC) - nrow(TNC_CLEAN)
+#More Cleaning
+TNC_CLEAN = TNC_CLEAN %>%
   mutate(gift_year = str_sub(gift_date,6,10),
          gift_mon  = str_sub(gift_date, 3,5),
          gift_mon_int = case_when(
@@ -42,18 +51,21 @@ TNC_CLEAN = TNC %>%
            gift_mon == "NOV" ~ 11,
            gift_mon == "DEC" ~ 12),
          gift_day  = str_sub(gift_date,1,2),
-         GIFT_DATE = as.Date(str_c(gift_year,gift_mon_int,gift_day,sep = "-"))) %>%
-  arrange(member_id,GIFT_DATE) %>%
+         GIFT_DATE = as.Date(str_c(gift_year,gift_mon_int,gift_day,sep = "-"))) %>% #Adding Time Variables
+  arrange(member_id,GIFT_DATE) %>% #Sorting by ID and time
   mutate(DIFF_ID   = c(1,diff(member_id, lag = 1)),
          DIFF_AMT  = c(1,diff(gift_amount, lag = 1)),
-         DIFF_DATE = c(1,diff(GIFT_DATE,lag = 1))) %>%
-  mutate(DROP = ifelse(DIFF_ID == 0 & DIFF_AMT ==0 & DIFF_DATE %in% c(28:32),1,0)) %>% # Only Exclude Monthly
-  filter(DROP == 0) %>%
-  mutate(
-    GIFT_DATE = case_when(
-      giving_channel == "Mail" ~ GIFT_DATE - 3,
-      TRUE ~ GIFT_DATE),
-    WEEK_LOW = floor_date(GIFT_DATE, unit = "week")) 
+         DIFF_DATE = c(1,diff(GIFT_DATE,lag = 1))) %>%  #Creating Variables to Detect Monthly Donations
+  mutate(DROP = ifelse(DIFF_ID == 0 & DIFF_AMT == 0 & DIFF_DATE %in% c(28:32),1,0)) %>% # Only Exclude Monthly
+  filter(DROP == 0)  #Dropping Recurring Monthly Donations
+#How Many Results Does this Leave?
+nrow(TNC_CLEAN)
+#More Processing
+TNC_CLEAN = TNC_CLEAN %>%
+  mutate(GIFT_DATE = case_when(
+              giving_channel == "Mail" ~ GIFT_DATE - 3, 
+              TRUE ~ GIFT_DATE),   #Lagging Date By 3 For Mail Donations
+         WEEK_LOW = floor_date(GIFT_DATE, unit = "week"))  #Collapsing All Donations to Beginning of the Week
 #Removing Strange Individual IDs
 Weird_IDS = TNC_CLEAN %>%
   group_by(member_id) %>%
@@ -62,6 +74,8 @@ Weird_IDS = TNC_CLEAN %>%
   pull(member_id)
 TNC_CLEAN = TNC_CLEAN %>%
   filter(!member_id %in% Weird_IDS) 
+#How Many Weird IDS?
+5848290 - nrow(TNC_CLEAN)
 
 #Week-Level Merge
 TNC_CLEAN_WEEK = TNC_CLEAN %>%
@@ -88,27 +102,36 @@ TNC_CLEAN_WEEK = bind_rows(TNC_CLEAN_WEEK, Zeros)
 #Remove 2010 and 2018 Weeks
 TNC_CLEAN_WEEK = TNC_CLEAN_WEEK %>%
   filter(year(WEEK_LOW) %in% 2011:2017) %>%
-  filter(WEEK_LOW != "2017-12-03")
+  filter(WEEK_LOW != "2017-12-03")  #It looks like the data ends is problematic in this one week
 write.csv(TNC_CLEAN_WEEK,"~/Google Drive/DATA/ECON/CLEAN/TNC_CLEAN_Week.csv")    
 
-
-
-
-summary(TNC_CLEAN$gift_amount)
+#Dimension of DataSet:
 nrow(TNC_CLEAN_WEEK)/50
-#Plot Average Weekly Donation Count By State
+#Distribution of Gift Amounts
+summary(TNC_CLEAN$gift_amount)
+#Minimum Value
+max(TNC_CLEAN_WEEK$COUNT)
+#From Where?
+TNC_CLEAN_WEEK$state[which.max(TNC_CLEAN_WEEK$COUNT)]
+#When?
+TNC_CLEAN_WEEK$WEEK_LOW[which.max(TNC_CLEAN_WEEK$COUNT)]
+
+
+#Import Plot of United States
 STATE_GIS = us_states(resolution = "low")
 
 Merge_TNC = TNC_CLEAN_WEEK %>%
   group_by(state) %>%
   summarize(Count_Per_Week  = mean(COUNT)) %>%
   rename(state_abbr = state)
-Merge_TNC %>% arrange(Count_Per_Week) %>% View()
-
+#See Which States have highest and lowest averages
+Merge_TNC %>% arrange(desc(Count_Per_Week))
+Merge_TNC %>% arrange(Count_Per_Week)
+#Joining Donation Counts Onto Map Data
 STATEPLOT = STATE_GIS %>%
   left_join(Merge_TNC, by = "state_abbr") %>%
   filter(!state_name %in% c("Hawaii", "Alaska", "Puerto Rico")) 
-
+#Creating Map
 ggplot() +
   geom_sf() +
   geom_sf(data = STATEPLOT, aes(fill = Count_Per_Week)) +
