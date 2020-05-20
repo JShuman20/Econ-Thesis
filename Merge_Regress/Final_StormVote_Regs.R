@@ -471,10 +471,11 @@ Table3APP_S = list(
 esttex(Table3APP_S, coefstate ="se", yesNoFixed = "No", keepFactors = F,
       file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/LOGIT/T3.Logit.tex")
   
-
+detach(package:alpaca)
+library(fixest)
 #01D. Replicating Table 4
 Table4APP_H = list(
-  L1 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year)  | Member.of.Congress, 
+  L1 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year) | Member.of.Congress, 
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
   L2 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + factor(Year) | Member.of.Congress, 
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
@@ -482,9 +483,9 @@ Table4APP_H = list(
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
   L4 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON)  | Member.of.Congress, 
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year)  | Member.of.Congress, 
-             data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit"))
-)
+  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP+ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON) | Member.of.Congress, 
+             data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")))
+
 esttex(Table4APP_H, coefstate ="se", yesNoFixed = "No", keepFactors = F,
        file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/LOGIT/T4.Logit.tex")
 
@@ -497,7 +498,7 @@ Table4APP_S = list(
              data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
   L4 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON)  | Member.of.Congress, 
              data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year)  | Member.of.Congress, 
+  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year)  | Member.of.Congress, 
              data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit"))
 )
 esttex(Table4APP_S, coefstate ="se", yesNoFixed = "No", keepFactors = F,
