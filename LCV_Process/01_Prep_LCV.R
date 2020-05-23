@@ -1,13 +1,23 @@
+#---------------------------------------------------------------------------------------------------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------------------------------------------#
+#The purpose of this script is to import and clean yearly LCV voting files downloaded from the LCV website. This includes scraping roll calls from 
+#the House and Senate website -- AN INTERNET CONNECT IS REQUIRED TO RUN THIS SCRIPT. ---------------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------------------------------------------#
+
+#-------------------------Loading Relevant Libraries-------------------#
+#For processing data
 library(tidyverse)
 library(purrr)
 library(writexl)
+library(xtable)
 library(readxl)
+#For scraping
 library(RCurl)
 library(xml2)
 library(rvest)
-library(xtable)
 
-#Cleaner Function for Senate Data
+#-----------------------Function to loop over individual LCV files in raw format and do preliminary cleaning------------#
+#Function is defined for both the House and Senate
 Cleaner = function(YEAR,BRANCH){
   #Define the Import Path
   PATH = str_c("~/Google Drive/DATA/ECON/RAW/LCV_DAT/",BRANCH,"/", YEAR, "-",tolower(BRANCH),"-scorecard-grid-export.csv")
@@ -22,17 +32,18 @@ Cleaner = function(YEAR,BRANCH){
            Policy = str_remove(Policy, "\\.{2}[0-9]{1,3}\\."))   #Cleaning String Variables
   return(DAT)
 }
-
+#Extracting list of years -- argument to the function
 YEARS  = list.files("~/Google Drive/DATA/ECON/RAW/LCV_DAT/SENATE/") %>%
   str_sub(start = 1,end = 4)
-#Read and Merge Senate Data
+
+#Reading, Merging, and Cleaning Raw Senate Data Files
 ALL_LCV_SENATE = map_dfr(.x = YEARS,
                          .f = ~ Cleaner(.x, "SENATE")) 
-#Read and Merge House
+#Reading, Merging, and Cleaning Raw House Data Files
 ALL_LCV_HOUSE = map_dfr(.x = YEARS,
                         .f = ~ Cleaner(.x, "HOUSE")) 
 
-#---------------------------------------------------Scraping Senate Vote Data---------------------------------#
+#--------------------------------------------Scraping Senate Vote Data---------------------------------#
 #List of url paths for senate
 urls = c()
 for(i in as.character(101:115)){
@@ -43,7 +54,7 @@ for(i in as.character(101:115)){
 }
 urls = c(urls,"https://www.senate.gov/legislative/LIS/roll_call_lists/vote_menu_116_1.xml")
 
-#Scraper Function
+#Function to Scrape Data Tables From Senate.gov
 SENATE_EXTRACT = function(URL){
   PAGE = read_xml(URL)
   #First, Extracting Year Variable
@@ -65,18 +76,18 @@ SENATE_EXTRACT = function(URL){
   return(DAT)
 }
 
-#Scraping and Merging
+#Scraping All Senate Roll Call Records
 ALL_SENATE = map_dfr(.x = urls,
                      .f = ~SENATE_EXTRACT(.x)) %>%
   mutate(ROLL_CALL = as.numeric(str_sub(ROLL,3,6)))
 
-#Merging to LCV Data
+#Merging Scraped Senate Roll Call Records With LCV Data
 ALL_LCV_SENATE_MERGE = ALL_LCV_SENATE %>%
   left_join(ALL_SENATE, by = c("ROLL_CALL", "Year")) %>%
-  filter(!is.na(ROLL)) %>%
+  filter(!is.na(ROLL)) %>% #Remove irrelevant roll calls (the ones that don't merge)
   filter(str_detect(Policy,str_c("..2x." ,
                                  "Oldham.Confirmation..Fifth.Circuit.Court.of.Appeals",
-                                 "McNamee.Confirmation..FERC.",sep = "|"),negate =TRUE)) %>%
+                                 "McNamee.Confirmation..FERC.",sep = "|"),negate =TRUE)) %>% #remove mistypes and duplicates
   mutate(Current.Score = as.numeric(Current.Score),
          Party = as.factor(Party),
          MON_NUM = case_when(
@@ -92,15 +103,15 @@ ALL_LCV_SENATE_MERGE = ALL_LCV_SENATE %>%
            MON == "Oct" ~ 10,
            MON == "Nov" ~ 11,
            MON == "Dec" ~ 12),
-         YEAR_MON = str_c(as.character(Year), as.character(MON_NUM), sep = "_"),
+         YEAR_MON = str_c(as.character(Year), as.character(MON_NUM), sep = "_"),  #Creating Various Time Variables
          DATE = as.Date(str_c(str_sub(YEAR_MON,1,4),MON_NUM,DAY,sep = "-")),
          POS_VOTE = case_when(Vote == "+" ~ 1,
-                              Vote == "-" ~ 0)) #Drop No Votes Instead of Counting as Zero
-#writing csv
+                              Vote == "-" ~ 0)) #No-Votes are now stored as "NA"
+
+#Writing Intermediate, Cleaned Senate Dataset
 write_csv(ALL_LCV_SENATE_MERGE, "~/Google Drive/DATA/ECON/CLEAN/LCV/SENATE.csv")
-
 #---------------------------------------------Scraping Dates of All House Votes-------------------------#
-
+#List of url paths for house
 urls_house = c()
 for(i in as.character(1990:2019)){
   for(j in as.character(0:9)){
@@ -108,7 +119,7 @@ for(i in as.character(1990:2019)){
   }
 }
 
-#Function to Extract Data
+#Function to Scrape Data Tables From Senate.gov
 HOUSE_EXTRACT = function(URL){
   if(url.exists(URL)){
     PAGE = read_html(URL)
@@ -127,7 +138,7 @@ HOUSE_EXTRACT = function(URL){
     return(DAT)
   }}
 
-#Executing Scrape and Cleanin g
+#Executing Scrape and Cleaning
 ALL_HOUSE = map_dfr(.x = urls_house,
                     .f = ~ HOUSE_EXTRACT(.x)) %>%
   mutate(Year = as.numeric(str_sub(YEAR, 6,10)),
@@ -146,7 +157,7 @@ ALL_LCV_HOUSE_MERGE = ALL_LCV_HOUSE %>%
   filter(!is.na(ROLL)) %>%
   filter(str_detect(Policy,str_c("..2x." ,
                                  "Undermining.the.Land.and.Water.Conservation.Fund",
-                                 "Undermining.Bedrock.Environmental.Laws", sep = "|"),negate =TRUE)) %>%
+                                 "Undermining.Bedrock.Environmental.Laws", sep = "|"),negate =TRUE)) %>% #Removing mistypes and duplicates
   mutate(Current.Score = as.numeric(Current.Score),
          Party = as.factor(Party),
          MON_NUM = case_when(
@@ -163,20 +174,16 @@ ALL_LCV_HOUSE_MERGE = ALL_LCV_HOUSE %>%
            MON == "Nov" ~ 11,
            MON == "Dec" ~ 12),
          YEAR_MON = str_c(as.character(Year), as.character(MON_NUM), sep = "_"),
-         DATE = as.Date(str_c(str_sub(YEAR_MON,1,4),MON_NUM,DAY,sep = "-")),
+         DATE = as.Date(str_c(str_sub(YEAR_MON,1,4),MON_NUM,DAY,sep = "-")), #Creating Various Time Variables
          POS_VOTE = case_when(Vote == "+" ~ 1,
-                              Vote == "-" ~ 0))%>% #Drop No Votes Instead of Counting as Zero
+                              Vote == "-" ~ 0))%>% #No-Votes Stored as "NA"
   mutate(CODE = str_sub(District,1,2)) %>%
   left_join(STATES, by = "CODE") %>%
   rename(State = `State Name`) %>%
   mutate(Member.of.Congress = case_when(
     Member.of.Congress == "Rogers, Mike"  & CODE == "AL" ~ "Rogers, Mike_AL",
     Member.of.Congress == "Brown, George" & CODE == "CO" ~ "Brown, George_CO",
-    TRUE ~ Member.of.Congress))
+    TRUE ~ Member.of.Congress)) #Members with the same name
 
 write_csv(ALL_LCV_HOUSE_MERGE, "~/Google Drive/DATA/ECON/CLEAN/LCV/HOUSE.csv")
-
-
-
-
 
