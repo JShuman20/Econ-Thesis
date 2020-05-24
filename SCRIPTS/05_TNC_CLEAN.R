@@ -145,7 +145,6 @@ Census = Census %>%
   select(YEAR, CODE, POP) %>%
   rename(state = CODE)
 
-
 #Adding Census Data to TNC Panel and Calculating Donations Per Million Residents
 TNC_CLEAN_WEEK = TNC_CLEAN_WEEK %>%
   mutate(YEAR = year(WEEK_LOW)) %>%
