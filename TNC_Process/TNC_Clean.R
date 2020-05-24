@@ -1,6 +1,12 @@
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+#This Script cleans the large TNC dataset and creates state panels by week and day. Summary Figures are also computed-----------------------------#
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+
+#-----------------------Loading Required Libraries--------------------------#
+
 library(tidyverse)
 library(purrr)
-library(furrr)
 library(parallel)
 library(readxl)
 library(data.table)
@@ -9,22 +15,17 @@ library(USAboundaries)
 library(ggmap)
 library(sp)
 library(sf)
-library(zoo)
-library(plm)
-library(sandwich)
-library(lmtest)
-library(readxl)
 library(stargazer)
 
-
-TNC = fread("~/Google Drive/DATA/ECON/RAW/TNC_RAW.csv")
+#------------------------------------Reading in Raw Data Files---------------------------------------#
+TNC = fread("~/Google Drive/DATA/ECON/RAW/TNC_RAW.csv") #Faster import
 STATES = read_xlsx("~/Google Drive/DATA/ECON/STATES_REGIONS.xlsx") %>%
   rename(CODE = `State Code`)
 
 #Number of Observations
 nrow(TNC)
 
-#Preliminary Cleaning
+#-------------------------------Preliminary Cleaning------------------------------------------------#
 TNC_CLEAN = TNC %>%
   filter(str_length(state) > 1) %>%
   mutate(state = toupper(state)) %>%
@@ -33,7 +34,7 @@ TNC_CLEAN = TNC %>%
 
 #Intermediate Stat: How Many Did this remove?
 nrow(TNC) - nrow(TNC_CLEAN)
-#More Cleaning
+#------------------------------------Majority of Cleaning--------------------------------------------#
 TNC_CLEAN = TNC_CLEAN %>%
   mutate(gift_year = str_sub(gift_date,6,10),
          gift_mon  = str_sub(gift_date, 3,5),
@@ -52,15 +53,16 @@ TNC_CLEAN = TNC_CLEAN %>%
            gift_mon == "DEC" ~ 12),
          gift_day  = str_sub(gift_date,1,2),
          GIFT_DATE = as.Date(str_c(gift_year,gift_mon_int,gift_day,sep = "-"))) %>% #Adding Time Variables
-  arrange(member_id,GIFT_DATE) %>% #Sorting by ID and time
+  arrange(member_id,GIFT_DATE) %>%  #Sorting by ID and time
   mutate(DIFF_ID   = c(1,diff(member_id, lag = 1)),
          DIFF_AMT  = c(1,diff(gift_amount, lag = 1)),
          DIFF_DATE = c(1,diff(GIFT_DATE,lag = 1))) %>%  #Creating Variables to Detect Monthly Donations
   mutate(DROP = ifelse(DIFF_ID == 0 & DIFF_AMT == 0 & DIFF_DATE %in% c(28:32),1,0)) %>% # Only Exclude Monthly
   filter(DROP == 0)  #Dropping Recurring Monthly Donations
+
 #How Many Results Does this Leave?
 nrow(TNC_CLEAN)
-#More Processing
+#-----------------------------------------------More Processing--------------------------------------#
 TNC_CLEAN = TNC_CLEAN %>%
   mutate(GIFT_DATE = case_when(
               giving_channel == "Mail" ~ GIFT_DATE - 3, 
@@ -77,17 +79,17 @@ TNC_CLEAN = TNC_CLEAN %>%
 #How Many Weird IDS?
 5848290 - nrow(TNC_CLEAN)
 
-#Week-Level Merge
+#---------------------------------------------------------Constructing State x Week Panel-----------------------#
 TNC_CLEAN_WEEK = TNC_CLEAN %>%
   group_by(WEEK_LOW, state) %>%
   summarize(COUNT = n(),
             AMT = sum(gift_amount))
-#Identifying Missing Week-State Pairs and Adding Zero Rows
+#Imputing Any Missing state x week observations as zero (I don't think there are any for week-level)
 MISSINGS = TNC_CLEAN_WEEK %>%
   group_by(WEEK_LOW) %>%
   summarize(COUNT = n()) %>%
   filter(COUNT < 50) %>%
-  pull(WEEK_LOW)
+  pull(WEEK_LOW)    #Extracting List of Weeks That Don't Have 50 Observations
 #Adding Zero Rows
 Zeros = map_dfr(.x = 1:length(MISSINGS),
                 .f =  ~ data.frame(
@@ -96,15 +98,67 @@ Zeros = map_dfr(.x = 1:length(MISSINGS),
                                     pull(state)),
                   WEEK_LOW = MISSINGS[.x],
                   COUNT = 0,
-                  AMT = 0))
+                  AMT = 0))   #Constructing Rows With Zeros
+TNC_CLEAN_WEEK = bind_rows(TNC_CLEAN_WEEK, Zeros) #Binding to State x Week Dataset
 
-TNC_CLEAN_WEEK = bind_rows(TNC_CLEAN_WEEK, Zeros)
-#Remove 2010 and 2018 Weeks
+#--------------------------------------Remove Seemingly-Partial Observations at Ends of DataSet-------------------------#
 TNC_CLEAN_WEEK = TNC_CLEAN_WEEK %>%
   filter(year(WEEK_LOW) %in% 2011:2017) %>%
   filter(WEEK_LOW != "2017-12-03")  #It looks like the data ends is problematic in this one week
+
+#--------------------------------------------------Constructing State x Day Panel------------------------------------#
+TNC_CLEAN_DAY = TNC_CLEAN %>%
+  group_by(GIFT_DATE, state) %>%
+  summarize(COUNT = n(),
+            AMT = sum(gift_amount))
+MISSINGS = TNC_CLEAN_DAY %>%
+  group_by(GIFT_DATE) %>% summarize(COUNT = n()) %>%
+  filter(COUNT < 50) %>%
+  pull(GIFT_DATE)
+#Adding Zero Rows
+Zeros = map_dfr(.x = 1:length(MISSINGS),
+                .f =  ~ data.frame(
+                  state = setdiff(STATES$CODE, TNC_CLEAN_DAY %>%
+                                    filter(GIFT_DATE == MISSINGS[.x]) %>%
+                                    pull(state)),
+                  GIFT_DATE = MISSINGS[.x],
+                  COUNT = 0,
+                  AMT = 0))
+
+TNC_CLEAN_DAY = bind_rows(TNC_CLEAN_DAY,Zeros)
+write.csv("~/Google Drive/DATA/ECON/CLEAN/TNC_CLEAN_DAY.csv")
+
+#-------------------------------------Merging With Census Population Estimates-----------------------------------------#
+#Reading and Formatting Census Data for Valid Merge
+Census = read.csv("~/Google Drive/DATA/ECON/nst-est2019-popchg2010_2019.csv") %>%
+  dplyr::select(NAME, starts_with("POPESTIMATE")) %>%
+  filter(NAME %in% STATES$`State Name`) %>%
+  rename_all(~str_sub(.,-4)) %>%
+  pivot_longer(cols = 2:11) %>%
+  rename(`State Name` = NAME,YEAR = name, POP = value) %>%
+  mutate(YEAR = as.numeric(YEAR),
+         `State Name` = as.character(`State Name`)) %>%
+  left_join(STATES) 
+#Writing Cleaned Version
+write.csv(Census, "~/Google Drive/DATA/ECON/STATE_POP.csv")
+Census = Census %>%
+  select(YEAR, CODE, POP) %>%
+  rename(state = CODE)
+
+
+#Adding Census Data to TNC Panel and Calculating Donations Per Million Residents
+TNC_CLEAN_WEEK = TNC_CLEAN_WEEK %>%
+  mutate(YEAR = year(WEEK_LOW)) %>%
+  left_join(Census, by = c("YEAR", "state"))%>%
+  mutate(COUNT_PER_POP = COUNT/POP,
+         COUNT_PER_MIL = COUNT_PER_POP*1000000)
+         
+
 write.csv(TNC_CLEAN_WEEK,"~/Google Drive/DATA/ECON/CLEAN/TNC_CLEAN_Week.csv")    
 
+
+
+#--------------------------------------------Summary Statistics--------------------------------------#
 #Dimension of DataSet:
 nrow(TNC_CLEAN_WEEK)/50
 #Distribution of Gift Amounts
@@ -112,21 +166,28 @@ summary(TNC_CLEAN$gift_amount)
 #Minimum Value
 max(TNC_CLEAN_WEEK$COUNT)
 #From Where?
-TNC_CLEAN_WEEK$state[which.max(TNC_CLEAN_WEEK$COUNT)]
+TNC_CLEAN_WEEK$state[which.max(TNC_CLEAN_WEEK$COUNT_PER_MIL)]
 #When?
-TNC_CLEAN_WEEK$WEEK_LOW[which.max(TNC_CLEAN_WEEK$COUNT)]
+TNC_CLEAN_WEEK$WEEK_LOW[which.max(TNC_CLEAN_WEEK$COUNT_PER_MIL)]
 
 
+#--------------------------------------------Creating Map-------------------------------------------#
 #Import Plot of United States
 STATE_GIS = us_states(resolution = "low")
-
+#Collapsing into single observation per state
 Merge_TNC = TNC_CLEAN_WEEK %>%
   group_by(state) %>%
-  summarize(Count_Per_Week  = mean(COUNT)) %>%
+  summarize(Count_Per_Week  = mean(COUNT),
+            Count_Per_Week_Mil = mean(COUNT_PER_MIL)) %>%
   rename(state_abbr = state)
+
 #See Which States have highest and lowest averages
 Merge_TNC %>% arrange(desc(Count_Per_Week))
 Merge_TNC %>% arrange(Count_Per_Week)
+#See Which States have the highest and lowest averages by population
+Merge_TNC %>% arrange(desc(Count_Per_Week_Mil))
+Merge_TNC %>% arrange(Count_Per_Week_Mil)
+
 #Joining Donation Counts Onto Map Data
 STATEPLOT = STATE_GIS %>%
   left_join(Merge_TNC, by = "state_abbr") %>%
@@ -137,9 +198,17 @@ ggplot() +
   geom_sf(data = STATEPLOT, aes(fill = Count_Per_Week)) +
   scale_fill_gradient(low = "orange", high = "blue", name = "Count Per Week") +
   theme_minimal() +
-  ggtitle("Average Count of TNC Donations Per Week by State")
+  ggtitle("Average Weekly Count of TNC Donations Per Million Residents By State")
+#Creating a Map with Scaled Donations Per Million People
+ggplot() +
+  geom_sf() +
+  geom_sf(data = STATEPLOT, aes(fill = Count_Per_Week_Mil)) +
+  scale_fill_gradient(low = "orange", high = "blue", name = "Count Per Week") +
+  theme_minimal() +
+  ggtitle("Average Weekly Count of TNC Donations Per Million Residents By State")
 
-#Histograms of Donation Counts For 6 Extreme States
+
+#------------------------------Histograms of Donation Counts For 6 Extreme States-------------------------------#
 TNC_CLEAN_WEEK %>%
   filter(state %in% c("ND","SD","WY", "FL", "NY","CA")) %>%
   ggplot() + 
@@ -149,8 +218,19 @@ TNC_CLEAN_WEEK %>%
   xlab("Weekly Donations") + ylab("Count") +
   ggtitle("Distribution of Weekly Donation Counts by State")
 
+#Histograms for Extreme States Identified by Scaled Donations
+TNC_CLEAN_WEEK %>%
+  filter(state %in% c("MS","LA","TX", "VT", "OR", "ME")) %>%
+  ggplot() + 
+  geom_histogram(aes(x = COUNT_PER_MIL), fill = "black", bins = 20) +
+  theme_bw() +
+  facet_grid(~state, scales = "free_x") +
+  xlab("Weekly Donations") + ylab("Count") +
+  ggtitle("Distribution of Weekly Donation Counts Per Million by State")
 
-#Time Trend by Median Split
+
+
+#--------------------------------------------------Time Trend by Median Split-----------------------------------------------------#
 Above.Med = Merge_TNC$state_abbr[which(Merge_TNC$Count_Per_Week > median(Merge_TNC$Count_Per_Week))] 
 #Trends by Week
 TNC_CLEAN_WEEK %>%
@@ -160,7 +240,7 @@ TNC_CLEAN_WEEK %>%
   summarize(COUNT = sum(COUNT)) %>%
   ggplot() +
   geom_line(aes(x = WEEK_LOW,y = log10(COUNT),group = Above.Median, col = Above.Median)) +
-  #geom_vline(xintercept = as.Date(str_c(as.character(2011:2017), "-12-15")),col = "forestgreen",lty = 2) +
+  #geom_vline(xintercept = as.Date(str_c(as.character(2011:2017), "-12-15")),col = "forestgreen",lty = 2) + #Optional Aesthetic
   theme_minimal() +
   theme(legend.position = "bottom") +
   scale_x_date(breaks = as.Date(str_c(as.character(2011:2016), "-12-15")), 
@@ -169,20 +249,29 @@ TNC_CLEAN_WEEK %>%
   ylab(expression(paste(Log[10], " Count of Donations By Week"))) +
   ggtitle(expression(paste("Total TNC Donation Counts By Week (", Log[10],")")))
 
-#Donations by Month
-TNC_CLEAN %>%
+#Time Trends by Median Split for Scaled Donations
+Above.Med.Scaled = Merge_TNC$state_abbr[which(Merge_TNC$Count_Per_Week_Mil > median(Merge_TNC$Count_Per_Week_Mil))]
+
+TNC_CLEAN_WEEK %>%
   mutate(MON = as.yearmon(as.character(WEEK_LOW)),
-         GENEROUS = as.factor(ifelse(state %in% Above.Med, 1,0))) %>%
-  group_by(MON, GENEROUS) %>%
-  #filter(MON > 2011.5 & MON < 2017.5) %>%
-  summarize(LOG_TOT = log(sum(AMT))) %>%
+         Above.Median = as.factor(ifelse(state %in% Above.Med.Scaled, 1,0))) %>%
+  group_by(WEEK_LOW, Above.Median) %>%
+  summarize(COUNT = sum(COUNT),
+            POP = sum(POP),
+            COUNT_PER_POP = COUNT/POP,
+            COUNT_PER_MIL = 1000000*COUNT_PER_POP) %>%
+  mutate(Above.Median = ifelse(Above.Median==0,"Below Median", "Above Median")) %>%
   ggplot() +
-  geom_line(aes(x = MON,y = LOG_TOT,group = GENEROUS, col = GENEROUS)) +
-  geom_vline(xintercept = c(0.92 + 2011:2016),col = "forestgreen",lty = 2) +
+  geom_line(aes(x = WEEK_LOW,y = COUNT_PER_MIL,group = Above.Median, col = Above.Median, lty = Above.Median)) +
+  #geom_vline(xintercept = as.Date(str_c(as.character(2011:2017), "-12-15")),col = "forestgreen",lty = 2) +
   theme_minimal() +
-  scale_color_discrete(name = "Above Median") +
-  scale_x_continuous(breaks = c(c(0.92 + 2011:2016)), labels= c("Dec.2011","Dec.2012","Dec.2013","Dec.2014", "Dec.2015","Dec.2016")) +
+  theme(legend.position = "bottom") +
+  scale_colour_discrete("") +
+  scale_linetype_manual("", values=c(1,2)) +
+  scale_x_date(breaks = as.Date(str_c(as.character(2011:2016), "-12-15")), 
+               labels= c("Dec.2011","Dec.2012","Dec.2013","Dec.2014", "Dec.2015","Dec.2016")) +
   xlab("Time") +
-  ylab("Log Total Donations") +
-  ggtitle("Log-Total TNC Donations by Month")
+  ylab("Weekly Dnations Per Million People") +
+  ggtitle("TNC Donations Per Million By Week")
+
 
