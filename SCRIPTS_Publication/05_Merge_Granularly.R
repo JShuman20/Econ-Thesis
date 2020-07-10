@@ -49,6 +49,8 @@ Compute_Lag_V2 = function(DSET, DAT, LAG_NEAR = 0, LAG_FAR, PLACE, TIME = "BEGIN
 
 
 
+
+
 #-------------------Plan for Granular Merge-------------------#
 #01. There are 2 types of geographies: counties and weather zones
 #02. 2/3 of events have beginning and ending coordinates -- we will construct a midpoint and assign that as the coordinate
@@ -125,6 +127,121 @@ ALL_Zs_Final = ALL_Zs_Final %>%
 head(ALL_Zs_Final)
 
 #------------------Now Trying to Work Out Counties----------------#
+NOAA_RELEVANT_TypeC = NOAA_RELEVANT %>%
+  mutate(END_DATE = as.Date(END_DATE)) %>%
+  filter(CZ_TYPE=="C", is.na(BEGIN_LAT)) %>%
+  dplyr::select(STATE,STATE_FIPS, CZ_TYPE, CZ_FIPS, CZ_NAME, STATE_CODE, EVENT_ID, 
+                DAMAGE_PROPERTY, BEGIN_DATE, END_DATE, PLACEBO_EVENT) %>%
+  mutate_at(c("STATE_FIPS", "CZ_FIPS", "CZ_NAME"), as.character) %>%
+  mutate(STATE_FIPS = ifelse(str_length(STATE_FIPS)==2, STATE_FIPS, str_c("0", STATE_FIPS)),
+         CZ_FIPS = case_when(str_length(CZ_FIPS)==1 ~ str_c("00",CZ_FIPS),
+                             str_length(CZ_FIPS)==2 ~ str_c("0", CZ_FIPS),
+                             TRUE ~ CZ_FIPS),
+         FIPS = str_c(STATE_FIPS,CZ_FIPS)) 
+#Pre-2001 Events
+NOAA_RELEVANT_Early_TypeC = filter(NOAA_RELEVANT_TypeC, END_DATE <= "2000-12-31") %>%
+  #Doing Some Regex Catches For Typos
+  mutate(FIPS = case_when(
+    str_length(CZ_NAME)==5 & str_detect(CZ_NAME, pattern = "[[:upper:]]{2}\\d{3}") ~ str_c(STATE_CODE, str_sub(CZ_NAME,3,5)),
+    TRUE ~ FIPS))
+#Merging with pre-2000 shapefiles
+EARLY_Years_Shapes = st_read("~/Desktop/US_AtlasHCB_Counties_Gen001/US_HistCounties_Gen001_Shapefile/US_HistCounties_Gen001.shp") %>%
+   filter(END_DATE > "1980-01-01") %>%
+   dplyr::select(c(NAME, STATE_TERR, FIPS, START_DATE, END_DATE, FULL_NAME, geometry)) %>%
+   filter(STATE_TERR != "District of Columbia") %>%
+   mutate(FIPS = as.character(FIPS))
+######Doing The Merge Piecewise to Increase Speed
+library(furrr)
+options("future.fork.enable" = TRUE)
+future::plan(multicore(workers = 4)) 
+Early_Years_TypeC_Merged = future_map_dfr(.x = 1:26, .f = function(.x){
+      INDEX = ifelse(.x==1,1,1000*(.x-1)+1)
+      IND_HIGH = ifelse(.x==26, nrow(NOAA_RELEVANT_Early_TypeC), INDEX + 999)
+      DAT = NOAA_RELEVANT_Early_TypeC[INDEX:IND_HIGH,] %>%
+          fuzzyjoin::fuzzy_left_join(EARLY_Years_Shapes,  by = c("FIPS" = "FIPS",
+                                                   "END_DATE" = "START_DATE",
+                                                   "END_DATE" = "END_DATE"),
+                                     match_fun = list(`==`, `>`, `<=`)) 
+      return(DAT)
+    })
+
+Early_Years_TypeC_Merged = st_sf(Early_Years_TypeC_Merged, sf_column_name = "geometry") %>%
+  mutate(NO_MERGE = sf::st_is_empty(geometry))
+
+
+#-------------------------Now Handling Post-2000 Merges----------------#
+Later_Year_Shapefiles = list.files("~/Desktop/Later_Counties/")
+First = Later_Year_Shapefiles[1] ; DIR = str_c("~/Desktop/Later_Counties/", First)
+FILES = list.files(DIR) ; END_PATH = FILES[grep(".shp$", FILES)]
+FILES_LATE =  st_read(str_c(DIR, END_PATH, sep = "/")) %>%
+              st_sf(., sf_column_name = "geometry") %>%
+              sf::st_zm(.) %>%
+              mutate(YEAR = str_extract(END_PATH, "[[:digit:]]{4}")) %>%
+              dplyr::select(STATEFP, COUNTYFP, YEAR, geometry)
+#Binding
+Later_Year_Shapefiles = Later_Year_Shapefiles[-1]
+for(i in Later_Year_Shapefiles){
+  DIR = str_c("~/Desktop/Later_Counties/", i)
+  FILES = list.files(DIR)
+  END_PATH = FILES[grep(".shp$", FILES)]
+  FILE = st_read(str_c(DIR, END_PATH, sep = "/")) %>%
+    st_sf(., sf_column_name = "geometry") %>%
+    sf::st_zm(.) 
+  YEAR = str_extract(END_PATH, "[[:digit:]]{4}")
+  FILE = FILE %>%
+    mutate(YEAR = YEAR)
+  if(YEAR == "2010"){
+    FILE = FILE %>%
+      rename(STATEFP = STATE, COUNTYFP = COUNTY)
+  }
+  FILE = FILE %>%
+    dplyr::select(STATEFP, COUNTYFP, YEAR, geometry)
+  FILES_LATE = rbind(FILES_LATE,FILE)
+}
+FILES_LATE = FILES_LATE %>%
+  mutate_at(c("STATEFP", "COUNTYFP"), as.character) %>%
+  rename(YEAR_MERGE = YEAR) 
+
+#Isolating Relevant Weather Events
+LateYear_TypeC_Merged = NOAA_RELEVANT_TypeC %>%
+  filter(END_DATE >"2000-12-31") %>%
+  mutate(YEAR = lubridate::year(END_DATE),
+         #Now Assigning to next available year
+         YEAR_MERGE = case_when(
+           YEAR < 2010 ~ 2010,
+           YEAR %in% 2010:2012 ~ 2013,
+           YEAR %in% 2013:2017 ~ YEAR + 1,
+           YEAR >= 2018 ~ 2018
+         )) %>%
+  mutate(YEAR_MERGE = as.character(YEAR_MERGE)) %>%
+  rename(STATEFP = STATE_FIPS, COUNTYFP = CZ_FIPS) %>%
+  left_join(FILES_LATE, by = c("STATEFP", "COUNTYFP", "YEAR_MERGE")) %>%
+  mutate(NO_MERGE = sf::st_is_empty(geometry)) 
+
+
+
+
+#Combining Into Full DataSet
+Early_Years_TypeC_Merged_1 = Early_Years_TypeC_Merged %>%
+  dplyr::select(-c(FIPS.y, END_DATE.y, FULL_NAME, NAME, STATE_TERR, START_DATE)) %>%
+  rename(FIPS = FIPS.x, END_DATE = END_DATE.x,
+         COUNTYFP = CZ_FIPS, STATEFP = STATE_FIPS) %>%
+  st_sf(., crs = 4269)
+
+head(LateYear_TypeC_Merged)
+LateYear_TypeC_Merged_1 = LateYear_TypeC_Merged %>%
+  dplyr::select(-c(YEAR, YEAR_MERGE)) %>%
+  st_sf(., sf_column_name = "geometry")
+
+ALL_TypeC_Merged = rbind(Early_Years_TypeC_Merged_1,LateYear_TypeC_Merged_1)
+
+head(ALL_TypeC_Merged)
+
+
+
+
+
+
 NOAA_TypeC = NOAA_RELEVANT %>% filter(CZ_TYPE == "C", is.na(BEGIN_LAT))  %>% 
   dplyr::select(STATE, CZ_TYPE, CZ_FIPS, CZ_NAME, STATE_CODE, EVENT_ID, DAMAGE_PROPERTY, BEGIN_DATE, END_DATE, PLACEBO_EVENT)
 nrow(NOAA_TypeC)
@@ -184,25 +301,51 @@ NOAA_TypeC_Good = NOAA_TypeC_Good %>%
 #Now Merging This With The ones That Already Have Coordinates
 HAD_COORDS = filter(NOAA_RELEVANT, !is.na(BEGIN_LAT)) %>%
   dplyr::select(STATE, STATE_CODE, EVENT_ID, DAMAGE_PROPERTY, BEGIN_DATE, END_DATE, PLACEBO_EVENT, BEGIN_LAT, BEGIN_LON) %>%
-  rename(LAT = BEGIN_LAT, LON = BEGIN_LON)
+  rename(LAT = BEGIN_LAT, LON = BEGIN_LON) %>%
+  mutate(BEGIN_DATE = as.Date(BEGIN_DATE), END_DATE = as.Date(END_DATE))
+
+ALL_Zs_Final = ALL_Zs_Final %>% mutate(END_DATE = as.Date(END_DATE), BEGIN_DATE = as.Date(BEGIN_DATE))
+ALL_TypeC_Merged = ALL_TypeC_Merged %>%
+  mutate(CENTROID = st_centroid(geometry))
+COORDS = st_coordinates(ALL_TypeC_Merged$CENTROID) %>% data.frame() %>% rename(LAT = X, LON = Y)
+ALL_TypeC_Merged = ALL_TypeC_Merged %>%
+  dplyr::select(c(STATE, STATE_CODE, EVENT_ID, DAMAGE_PROPERTY, BEGIN_DATE, END_DATE, PLACEBO_EVENT)) %>%
+  bind_cols(COORDS) 
+ALL_TypeC_Merged = ALL_TypeC_Merged %>%
+  dplyr::select(-geometry) %>% as.data.frame()
+ALL_TypeC_Merged = ALL_TypeC_Merged %>% mutate(BEGIN_DATE = as.Date(BEGIN_DATE))
+  
+
+glimpse(ALL_TypeC_Merged)
 
 #Pushing together all the successfuls
-ALL_Successful = bind_rows(NOAA_TypeC_Good, ALL_Zs_Final, HAD_COORDS)
+ALL_Successful = bind_rows(ALL_TypeC_Merged, ALL_Zs_Final, HAD_COORDS)
+ALL_Successful = dplyr::select(ALL_Successful, -geometry) 
+ALL_Successful = distinct(ALL_Successful)
+glimpse(ALL_Successful)
 
 #WE'VE ACCOUNTED FOR ALL CASES
-nrow(ALL_Successful) + nrow(Zs_Failed) + nrow(NOAA_C_Test) == nrow(NOAA_RELEVANT)
+nrow(ALL_Successful) + nrow(Zs_Failed) - nrow(NOAA_RELEVANT)
 
+as.vector(colnames(ALL_Successful))
 
-head(ALL_Successful)
+#Adding Failed Type Z Back on
+Zs_Failed = Zs_Failed %>%
+  dplyr::select(STATE, STATE_CODE, EVENT_ID, DAMAGE_PROPERTY, BEGIN_DATE, END_DATE, PLACEBO_EVENT, LAT, LON) %>%
+  mutate_at(c("END_DATE", "BEGIN_DATE"), as.Date)
 
+ALL = bind_rows(ALL_Successful, Zs_Failed)
+ALL = mutate(ALL, NO_MERGE = is.na(LAT))
 #-------------------------------Point-in-Polygon Merge With Congressional District Files---------------#
-ALL_Successful = ALL_Successful %>%
+ALL = ALL %>%
   mutate(BEGIN_DATE = as.Date(BEGIN_DATE), END_DATE = as.Date(END_DATE))
 #Create Structure That Stores Date Ranges for Congresses
 DATES = read_xlsx("~/Desktop/Congress_Dates.xlsx") %>%
   dplyr::select(Congress, BEGIN_DATE,END_DATE)  %>%
   mutate(BEGIN_DATE = as.Date(BEGIN_DATE), END_DATE = as.Date(END_DATE))
 
+ALL_Successful = ALL %>% filter(!NO_MERGE)
+ALL_Unsuccessful = ALL %>% filter(NO_MERGE)
 
 get_congress_map <- function(cong) {
   tmp_file <- tempfile()
@@ -227,8 +370,9 @@ RES_114 = st_join(Test, MAP)
 #Adding Them on to the 114 Merge
 for(i in 99:113){
   print(i)
-   MAP = get_congress_map(i) %>% dplyr::select(STATENAME,DISTRICT, geometry)
-   Congress_Num = as.character(i); Congress_Num_End = as.character(i+1)
+  MAP = get_congress_map(i) %>% dplyr::select(STATENAME,DISTRICT, geometry)
+  MAP = st_transform(MAP, crs = 4269)
+  Congress_Num = as.character(i); Congress_Num_End = as.character(i+1)
   BEGIN = DATES$BEGIN_DATE[which(str_detect(DATES$Congress,Congress_Num))]
   END   = DATES$BEGIN_DATE[which(str_detect(DATES$Congress, Congress_Num_End))]
   Rel_Storms = ALL_Successful %>%
@@ -239,6 +383,165 @@ for(i in 99:113){
   RES = st_join(Rel_Storms, MAP)
   RES_114 = bind_rows(RES_114,RES)
 }
+
+#Separate the successful from unsuccessful
+CD_Merged_Unsuccessful = RES_114 %>% filter(is.na(DISTRICT))
+#Characteristics of the Ones that dont merge
+CD_Merged_Successful %>%
+  mutate(YEAR = lubridate::year(END_DATE)) %>%
+  group_by(YEAR) %>%
+  summarize(COUNT = n()) %>% View()
+
+
+CD_Merged_Successful = RES_114 %>%
+  filter(!is.na(DISTRICT)) %>%
+  as.data.frame() %>%
+  dplyr::select(-geometry)
+head(CD_Merged_Successful)
+
+
+
+
+#-----------------------------------Now Trying to Merge to House of Reps------------------#
+
+ALL_LCV_HOUSE_MERGE = read.csv("~/Google Drive/DATA/ECON/CLEAN/LCV/HOUSE.csv")
+ALL_LCV_HOUSE_MERGE = mutate(ALL_LCV_HOUSE_MERGE, DATE = as.Date(DATE))
+
+ 
+#Defining a merge function
+glimpse(CD_Merged_Successful)
+CD_Merged_Successful_2 = CD_Merged_Successful %>%
+  mutate(District = case_when(
+    STATE == "VERMONT" ~ "VT-AL",
+    STATE != "VERMONT" & str_length(DISTRICT) == 1 ~ str_c(STATE_CODE, "-0", DISTRICT),
+    TRUE ~ str_c(STATE_CODE, "-", DISTRICT)
+  ))
+
+head(CD_Merged_Successful_2)
+class(ALL_LCV_HOUSE_MERGE)
+
+#Test for 0-30 Date Range
+Test = ALL_LCV_HOUSE_MERGE %>%
+  sample_n(100) %>%
+  mutate(DATE_1 = DATE-0, DATE_2 = DATE-30) %>%
+  fuzzyjoin::fuzzy_left_join(CD_Merged_Successful_2,  by = c("District" = "District",
+                                                           "DATE_2" = "END_DATE",
+                                                           "DATE_1" = "END_DATE"),
+                             match_fun = list(`==`, `<=`, `>`)) 
+
+Compute_Lag_District = function(DSET, DAT, LAG_NEAR = 0, LAG_FAR, PLACE, TIME = "BEGIN"){
+  DAT_FAR  = DAT - LAG_FAR
+  DAT_NEAR = DAT - LAG_NEAR
+  if(TIME == "BEGIN"){
+    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$BEGIN_DATE >= DAT_FAR  & 
+                                           DSET$BEGIN_DATE <= DAT_NEAR & 
+                                           DSET$District == PLACE)], na.rm = TRUE)
+  }
+  else if (TIME == "END"){
+    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$END_DATE >= DAT_FAR    & 
+                                           DSET$END_DATE <= DAT_NEAR   & 
+                                           DSET$District == PLACE)], na.rm = TRUE)
+  }
+  else if (TIME == "MID"){
+    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$MID_DATE >= DAT_FAR      & 
+                                           DSET$MID_DATE <= DAT_NEAR     & 
+                                           DSET$District == PLACE)],   na.rm = TRUE)
+  }
+  return(RES)
+}
+
+Placebo_Events = CD_Merged_Successful_2 %>%
+  filter(PLACEBO_EVENT == 1)
+nrow(Placebo_Events)
+
+Test = sample_n(ALL_LCV_HOUSE_MERGE,100)
+ALL_LCV_HOUSE_MERGE$Lag_30 =  as.numeric(unlist(mclapply(1:nrow(ALL_LCV_HOUSE_MERGE),
+         function(x) Compute_Lag_District(DSET = CD_Merged_Successful_2, DAT = ALL_LCV_HOUSE_MERGE$DATE[x], 
+                                          LAG_NEAR = 0, LAG_FAR = 30, PLACE = ALL_LCV_HOUSE_MERGE$District[x], TIME = "END"), mc.cores = 5)))
+ALL_LCV_HOUSE_MERGE$Lag_30_Placebo = as.numeric(unlist(mclapply(1:nrow(ALL_LCV_HOUSE_MERGE),
+                                                                function(x) Compute_Lag_District(DSET = Placebo_Events, DAT = ALL_LCV_HOUSE_MERGE$DATE[x], 
+                                                                                                 LAG_NEAR = 0, LAG_FAR = 30, PLACE = ALL_LCV_HOUSE_MERGE$District[x], TIME = "END"), mc.cores = 5)))
+table(ALL_LCV_HOUSE_MERGE$Lag_30_Placebo > 0)
+
+nrow(CD_Merged_Successful)/nrow(NOAA_RELEVANT)
+
+library(fixest)
+feols()
+head(ALL_LCV_HOUSE_MERGE_Regress)
+
+
+#Quick Test
+ALL_LCV_HOUSE_MERGE_Regress = ALL_LCV_HOUSE_MERGE %>%
+  mutate(SEASON = case_when(
+    MON_NUM %in% c(12,1,2,3) ~ "WINTER",
+    MON_NUM %in% c(4,5,6) ~ "SPRING",
+    MON_NUM %in% c(7,8,9) ~ "SUMMER",
+    MON_NUM %in% c(10,11) ~ "FALL")) %>% #Season fixed effect
+  mutate(PANEL_VAR = 100000*Year + ROLL_CALL) %>%
+  mutate(Member.of.Congress = as.character(Member.of.Congress),
+        Member.of.Congress = case_when(
+              Member.of.Congress == "Rogers, Mike"  & State == "AL" ~ "Rogers, Mike_AL",
+               Member.of.Congress == "Brown, George" & State == "CO" ~ "Brown, George_CO",
+              TRUE ~ Member.of.Congress)) %>% #This is an Extra Catch -- didnt seem to get caught the fi#Panel time variables
+  mutate(REP = ifelse(Party == "R",1,0)) %>%
+  mutate(Lag_30_Not_Placebo = Lag_30 - Lag_30_Placebo,
+         Lag_30_Not_Placebo_BIN = ifelse(Lag_30_Not_Placebo >0,1,0)) %>%
+  mutate(Lag_30_BIN = ifelse(Lag_30 >0,1,0)) %>%
+  mutate(Lag_30_Zero = ifelse(Lag_30 %in% 1:1000000,1,0),
+         Lag_30_Mid = ifelse(Lag_30 %in% 1000001:50000000,1,0),
+         Lag_30_Big = ifelse(Lag_30 >50000000,1,0)) %>%
+  mutate(Lag_30_Placebo_BIN = ifelse(Lag_30_Placebo>0,1,0))
+
+
+glimpse(ALL_LCV_HOUSE_MERGE_Regress)
+X = plm(POS_VOTE ~ Lag_30_Placebo_BIN*REP - REP + factor(Year) + factor(SEASON), data = ALL_LCV_HOUSE_MERGE_Regress, 
+        model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+X1 = plm(POS_VOTE ~ Lag_30_Not_Placebo_BIN*REP - REP + factor(Year) + factor(SEASON), data = ALL_LCV_HOUSE_MERGE_Regress, 
+         model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+
+
+X = plm(POS_VOTE ~Lag_30_Zero*REP + Lag_30_Mid*REP + Lag_30_Big*REP - REP + factor(Year) + factor(SEASON), data = ALL_LCV_HOUSE_MERGE_Regress, 
+         model = "within", index = c("Member.of.Congress","PANEL_VAR"))
+
+summary(X1)
+
+
+plm()
+X = feols(POS_VOTE ~  I(Lag_30>0)*REP - REP + factor(SEASON) | Member.of.Congress, 
+      data = ALL_LCV_HOUSE_MERGE_Regress, panel.id = c("Member.of.Congress", "PANEL_VAR"))
+summary(X)
+
+head(Test)
+
+CD_Merged_Successful_2 %>%
+  filter(District == "VA-10", END_DATE >= "2013-05-29", END_DATE < "2013-06-28")
+
+s.numeric(unlist(mclapply(1:nrow(SMALL_VOTE), 
+                          function(x) Compute_Lag_V2(DSET = SMALL, DAT = SMALL_VOTE$DATE[x], LAG_NEAR = ..1, LAG_FAR = ..2, 
+                                                     PLACE = SMALL_VOTE$State[x], TIME = ..3), mc.cores = 6))))
+
+
+
+Test %>%
+  group_by(District.x, DATE) %>%
+  summarize(SUM = sum(DAMAGE_PROPERTY, na.rm = TRUE))
+
+
+CD_Merged_Successful_2 %>%
+  filter(District == "AR-01", END_DATE >= "2016-04-17", END_DATE < "2016-05-17")
+
+
+head(CD_Merged_Successful_2)
+glimpse(ALL_LCV_HOUSE_MERGE)
+
+
+
+RES_114 
+colnames(RES_114)
+class(RES_114)
+
+CRS(MAP_100)
+class(MAP_100)
 class(RES_114)
 library(tidyverse)
 filter(RES_114, is.na(STATENAME))
