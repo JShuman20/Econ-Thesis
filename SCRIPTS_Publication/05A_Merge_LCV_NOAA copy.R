@@ -185,3 +185,55 @@ ALL_LCV_HOUSE_MERGE = ALL_LCV_HOUSE_MERGE %>%
 #Writing Merged (Lagged) Data File
 write.csv(ALL_LCV_HOUSE_MERGE, "~/Google Drive/DATA/ECON/CLEAN/HOUSE_LAGGED.csv")
 
+
+
+
+#Adding a Robustness Check -- Does National Damage Predict the Prob of a vote?
+library(lubridate)
+DAT_init = as_date("1990-01-01")
+ALL_DATES = map_dfr(.x = 0:12000, .f = ~ data.frame(DATE = DAT_init + days(.x))) %>% filter(DATE < "2020-01-01")
+max(ALL_DATES$DATE)
+#For House
+Distinct_HOUSE_Votes = distinct(ALL_LCV_HOUSE_MERGE, DATE) %>% mutate(DATE = as_date(DATE))
+Distinct_SENATE_Votes = distinct(ALL_LCV_SENATE_MERGE, DATE) %>% mutate(DATE = as_date(DATE))
+#Create National Series of Dates
+Test_Dates_House = ALL_DATES %>%
+  mutate(VOTE_OCCURED_House  = ifelse(DATE %in% Distinct_HOUSE_Votes$DATE, 1,0),
+         VOTE_OCCURED_Senate = ifelse(DATE %in% Distinct_SENATE_Votes$DATE, 1,0),
+         DATE = floor_date(DATE, unit = "week")) %>%
+  group_by(DATE) %>%
+  summarize(VOTES_HOUSE  = sum(VOTE_OCCURED_House),
+            VOTES_SENATE = sum(VOTE_OCCURED_Senate)) %>%
+  ungroup() %>%
+  mutate(OCCURED_HOUSE  = ifelse(VOTES_HOUSE>0,1,0),
+         OCCURED_SENATE = ifelse(VOTES_SENATE>0,1,0))
+
+head(Test_Dates_House)
+nrow(Test_Dates_House)
+
+DAM_LAGGED = unlist(mclapply(X = 1:nrow(Test_Dates_House), FUN = function(X){
+  sum(DAT_CLEAN_NOZEROS$DAMAGE_PROPERTY[which(DAT_CLEAN_NOZEROS$END_DATE<Test_Dates_House$DATE[X] & 
+                                                   DAT_CLEAN_NOZEROS$END_DATE >= (Test_Dates_House$DATE[X]- days(30)))])
+  
+}, mc.cores = 4))
+
+Test_Dates_House = Test_Dates_House %>%
+  mutate(National_Dam_30 = DAM_LAGGED,
+         Log_Dam = log(National_Dam_30 +1),
+         YEAR = year(DATE),
+         MON = month(DATE),
+         MONTH = as.character(MON),
+         SEASON = case_when(
+           MONTH %in% 1:3 ~ "Winter",
+           MONTH %in% 4:6 ~ "Spring",
+           MONTH %in% 7:9 ~ "Summer",
+           MONTH %in% 10:12 ~ "Winter"
+         ))
+
+
+summary(glm(OCCURED_SENATE ~ Log_Dam + factor(YEAR) + factor(MON), data = Test_Dates_House))
+
+
+
+
+ifelse(DATE %in% Distinct_HOUSE_Votes$DATE, 1,0),
