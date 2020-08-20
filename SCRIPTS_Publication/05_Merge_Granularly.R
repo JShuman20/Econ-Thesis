@@ -122,6 +122,8 @@ TypeC = filter(NOAA_RELEVANT, CZ_TYPE == "C")
 
 head(TypeZ)
 
+
+
 #Joining Type Z to State
 TypeZ_withShape = TypeZ %>%
   left_join(Shapes, by = "STATE_ZONE") %>%
@@ -491,5 +493,6 @@ RES = RES %>%
   
 #Bind Everything Together
 ALL_MERGED_NoGeo = bind_rows(ALL_MERGED_NoGeo, RES)
+ALL_MERGED_NoGeo
 
 write_rds(ALL_MERGED_NoGeo, "~/Desktop/ECON Thesis/ALL_MERGED.rds")
