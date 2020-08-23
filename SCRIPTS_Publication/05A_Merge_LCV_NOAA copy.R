@@ -221,8 +221,16 @@ Test_Dates_House = Test_Dates_House %>%
   mutate(National_Dam_30 = DAM_LAGGED,
          Log_Dam = log(National_Dam_30 +1),
          YEAR = year(DATE),
-         MON = month(DATE),
-         MONTH = as.character(MON),
+         MON = month(DATE))
+head(Test_Dates_House)
+
+Test_Dates_House = Test_Dates_House %>%
+  mutate(MONTH = as.character(MON),
+         DAM_BIN = case_when(
+           National_Dam_30 <= quantile(National_Dam_30,0.25) ~ "Bottom",
+           National_Dam_30 > quantile(National_Dam_30,0.25) & National_Dam_30 <= quantile(National_Dam_30,0.75) ~ "Mid",
+           National_Dam_30 > quantile(National_Dam_30,0.75) ~ "High"
+         ),
          SEASON = case_when(
            MONTH %in% 1:3 ~ "Winter",
            MONTH %in% 4:6 ~ "Spring",
@@ -230,8 +238,8 @@ Test_Dates_House = Test_Dates_House %>%
            MONTH %in% 10:12 ~ "Winter"
          ))
 
-
-summary(glm(OCCURED_SENATE ~ Log_Dam + factor(YEAR) + factor(MON), data = Test_Dates_House))
+head(Test_Dates_House)
+summary(glm(OCCURED_SENATE ~ DAM_BIN, data = Test_Dates_House))
 
 
 
