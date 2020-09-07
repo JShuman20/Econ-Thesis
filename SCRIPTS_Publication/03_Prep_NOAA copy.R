@@ -67,6 +67,19 @@ PLACEBO_EVENTS = c("WINTER STORM", "HEAVY SNOW","WINTER WEATHER","COLD/WIND CHIL
 DAT_CLEAN = DAT_CLEAN %>%
   dplyr::select(c(1:16,18,20:26,28,30,33,44:58)) %>%
   mutate(PLACEBO_EVENT = ifelse(EVENT_TYPE %in% PLACEBO_EVENTS, 1,0))
+
+#Adding CPI ADjustment
+CPI = read_xlsx("~/Desktop/CPI.xlsx", skip = 11) %>%
+  dplyr::select(Year, Annual) %>%
+  rename(YEAR = Year, CPI = Annual) %>%
+  mutate(YEAR = as.character(YEAR))
+#Extracting 2000 CPI SCaling Factor
+CPI_2000 = CPI$CPI[which(CPI$YEAR=="2000")]
+#ADjusting Damages to 2000 Dollars
+DAT_CLEAN = DAT_CLEAN %>%
+  left_join(CPI, by = "YEAR") %>%
+  mutate(DAM_PROP_2000 = (DAMAGE_PROPERTY * CPI_2000)/CPI)
+
   
 
 #------------------------Writing Cleaned File-------------------------------------#
