@@ -71,7 +71,7 @@ TNC_CLEAN = TNC_CLEAN %>%
               giving_channel == "Mail" ~ GIFT_DATE - 3, 
               TRUE ~ GIFT_DATE),   #Lagging Date By 3 For Mail Donations
          WEEK_LOW = floor_date(GIFT_DATE, unit = "week"))  #Collapsing All Donations to Beginning of the Week
-
+glimpse(TNC_CLEAN)
 #Removing Strange Individual IDs
 Weird_IDS = TNC_CLEAN %>%
   group_by(member_id) %>%
@@ -173,7 +173,6 @@ TNC_CLEAN_WEEK$state[which.max(TNC_CLEAN_WEEK$COUNT_PER_MIL)]
 #When?
 TNC_CLEAN_WEEK$WEEK_LOW[which.max(TNC_CLEAN_WEEK$COUNT_PER_MIL)]
 
-plot_state
 #--------------------------------------------Creating Map-------------------------------------------#
 #Import Plot of United States
 STATE_GIS = us_states(resolution = "low")
@@ -276,5 +275,14 @@ TNC_CLEAN_WEEK %>%
   xlab("Time") +
   ylab("Weekly Dnations Per Million People") +
   ggtitle("TNC Donations Per Million By Week")
+
+#Simpler Description -- Difference Between December and Others
+head(TNC_CLEAN_WEEK)
+
+month(TNC_CLEAN_WEEK$WEEK_LOW[1])
+
+TNC_CLEAN_WEEK %>%
+  mutate(DEC = ifelse(month(WEEK_LOW)==12, "DEC", "OTHER")) %>%
+  group_by(DEC) %>% summarize(COUNT = mean(COUNT))
 
 
