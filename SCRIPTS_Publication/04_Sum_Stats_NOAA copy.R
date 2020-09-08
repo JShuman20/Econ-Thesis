@@ -29,7 +29,7 @@ unique(DAT_CLEAN$EVENT_TYPE)
 table(DAT_CLEAN$DAMAGE_PROPERTY >0)[2]/nrow(DAT_CLEAN)
 
 #Range of Values
-range(DAT_CLEAN$DAMAGE_PROPERTY, na.rm = TRUE)
+range(DAT_CLEAN$DAM_PROP_2000, na.rm = TRUE)
 
 #Which States Are Hit Hardest
 DAT_CLEAN %>%
@@ -46,7 +46,7 @@ DAT_CLEAN %>%
     MONTH %in% c(7,8,9) ~ "SUMMER",
     MONTH %in% c(10,11,12) ~ "FALL")) %>%
   group_by(SEASON, PLACEBO_EVENT) %>% 
-  summarize(COUNT = n()/28, AMT = sum(DAMAGE_PROPERTY,na.rm = TRUE)/(28*1000000)) %>%
+  summarize(COUNT = n()/28, AMT = sum(DAM_PROP_2000,na.rm = TRUE)/(28*1000000)) %>%
   pivot_wider(names_from = PLACEBO_EVENT, values_from = c(COUNT,AMT)) %>%
   mutate(COUNT_TOTAL = COUNT_0+COUNT_1, AMT_TOTAL = AMT_0+AMT_1) %>%
   select(1,6,7,2,4,3,5) %>%
@@ -57,9 +57,9 @@ DAT_CLEAN %>%
 #01. Percentage of States that Have a Cold Weather Event -- 18.5%
 table(DAT_CLEAN$PLACEBO_EVENT)/nrow(DAT_CLEAN)
 #02. Percentage of Damaging Events -- 6.2%
-DAT_CLEAN %>% filter(DAMAGE_PROPERTY > 0) %>% group_by(PLACEBO_EVENT) %>% summarize(COUNT = n())
+DAT_CLEAN %>% filter(DAM_PROP_2000 > 0) %>% group_by(PLACEBO_EVENT) %>% summarize(COUNT = n())
 #Percent of Overall Damages
-DAT_CLEAN %>% filter(DAMAGE_PROPERTY > 0) %>% group_by(PLACEBO_EVENT) %>% summarize(COUNT = sum(DAMAGE_PROPERTY))
+DAT_CLEAN %>% filter(DAM_PROP_2000 > 0) %>% group_by(PLACEBO_EVENT) %>% summarize(COUNT = sum(DAM_PROP_2000))
 DAT_CLEAN %>%
   group_by(STATE) %>%
   summarise(N_COLD = sum(PLACEBO_EVENT)) %>% arrange(desc(N_COLD))
@@ -68,15 +68,32 @@ DAT_CLEAN %>%
 #Identifying Above Median Damage States Over Time
 ABOVE_MED_STATES = DAT_CLEAN %>%
   group_by(STATE) %>%
-  summarise(LOG_TOT_PROP = log(1 + sum(DAMAGE_PROPERTY,na.rm = TRUE))) %>%
+  summarise(LOG_TOT_PROP = log(1 + sum(DAM_PROP_2000,na.rm = TRUE))) %>%
   mutate(ABOVE_MED = ifelse(LOG_TOT_PROP > median(LOG_TOT_PROP),1,0)) %>%
   filter(ABOVE_MED == 1) %>%
   pull(STATE)
 
+#-----------------------------------Comparing CPI-ADjust to Regular-------------------#
+DAT_CLEAN %>%
+  group_by(BEGIN_DATE_YM) %>%
+  summarize(TOTAL = log(1 + sum(DAMAGE_PROPERTY, na.rm = T)),
+            TOT_2000 = log(1 + sum(DAM_PROP_2000,na.rm = T))) %>%
+  ggplot() +
+  geom_line(aes(x = BEGIN_DATE_YM, y = TOTAL), col = "red") +
+  geom_line(aes(x = BEGIN_DATE_YM, y = TOT_2000), col = "blue")
+
+#Checking 2018 Storms
+DAT_CLEAN %>% filter(YEAR == "2018") %>%
+  summarize(TOTAL = log(1 + sum(DAMAGE_PROPERTY, na.rm = T)),
+            TOT_2000 = log(1 + sum(DAM_PROP_2000,na.rm = T))) 
+
+
+  
+
 #Plotting Time Trends By Above Median
 DAT_CLEAN %>%
   group_by(BEGIN_DATE_YM, STATE)  %>%
-  summarize(TOT_PROP = sum(DAMAGE_PROPERTY, na.rm = TRUE)) %>%
+  summarize(TOT_PROP = sum(DAM_PROP_2000, na.rm = TRUE)) %>%
   mutate(LOG_TOT = log(TOT_PROP + 1),
          `Above Median` = ifelse(STATE %in% ABOVE_MED_STATES, "Above Median", "Below Median")) %>%
   group_by(`Above Median`, BEGIN_DATE_YM) %>%
@@ -95,7 +112,7 @@ DAT_CLEAN %>%
 DAT_CLEAN %>%
   filter(STATE %in% c("MAINE", "NORTH DAKOTA", "DELAWARE", "UTAH", "FLORIDA")) %>%
   group_by(STATE, BEGIN_DATE_YM) %>%
-  summarize(TOT_PROP = sum(DAMAGE_PROPERTY, na.rm = TRUE)) %>%
+  summarize(TOT_PROP = sum(DAM_PROP_2000, na.rm = TRUE)) %>%
   mutate(LOG_TOT = log(TOT_PROP + 1)) %>%
   ggplot() + 
   geom_histogram(aes(x = LOG_TOT), bins = 20, fill = "black") +
@@ -122,9 +139,9 @@ DAT_CLEAN %>%
     
 #Most Damaging Storm Types
 DAT_CLEAN %>%
-  filter(DAMAGE_PROPERTY > 0) %>%
+  filter(DAM_PROP_2000 > 0) %>%
   group_by(EVENT_TYPE) %>%
-  summarize(DAMAGE = sum(DAMAGE_PROPERTY,na.rm = TRUE)/1000000) %>%
+  summarize(DAMAGE = sum(DAM_PROP_2000,na.rm = TRUE)/1000000) %>%
   arrange(desc(DAMAGE)) %>%
   mutate(EVENT_TYPE = tolower(EVENT_TYPE)) %>%
   rename(`Storm Class` = EVENT_TYPE) %>%
