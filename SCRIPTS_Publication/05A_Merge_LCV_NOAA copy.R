@@ -26,7 +26,7 @@ Distinct_Senate_Votes = ALL_LCV_SENATE_MERGE %>%
   mutate(DATE = as.Date(DATE))
 #----------------------Filtering to Nonzero rows of Disaster data for faster processing------------------------#
 DAT_CLEAN_NOZEROS = DAT_CLEAN %>% 
-  filter(DAMAGE_PROPERTY > 0) 
+  filter(DAM_PROP_2000 > 0) 
 #--------------------Filtering Data For Only "Cold" Events----------------------------------#
 DAT_CLEAN_PLACEBO = filter(DAT_CLEAN_NOZEROS, PLACEBO_EVENT == 1)
 
@@ -36,17 +36,17 @@ Compute_Lag_V2 = function(DSET, DAT, LAG_NEAR = 0, LAG_FAR, PLACE, TIME = "BEGIN
   DAT_FAR  = DAT - LAG_FAR
   DAT_NEAR = DAT - LAG_NEAR
   if(TIME == "BEGIN"){
-    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$BEGIN_DATE >= DAT_FAR  & 
+    RES = sum(DSET$DAM_PROP_2000[which(DSET$BEGIN_DATE >= DAT_FAR  & 
                                          DSET$BEGIN_DATE <= DAT_NEAR & 
                                          DSET$STATE_CODE == PLACE)], na.rm = TRUE)
   }
   else if (TIME == "END"){
-    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$END_DATE >= DAT_FAR    & 
+    RES = sum(DSET$DAM_PROP_2000[which(DSET$END_DATE >= DAT_FAR    & 
                                          DSET$END_DATE <= DAT_NEAR   & 
                                          DSET$STATE_CODE == PLACE)], na.rm = TRUE)
   }
   else if (TIME == "MID"){
-    RES = sum(DSET$DAMAGE_PROPERTY[which(DSET$MID_DATE >= DAT_FAR      & 
+    RES = sum(DSET$DAM_PROP_2000[which(DSET$MID_DATE >= DAT_FAR      & 
                                          DSET$MID_DATE <= DAT_NEAR     & 
                                          DSET$STATE_CODE == PLACE)],   na.rm = TRUE)
   }
@@ -56,47 +56,48 @@ Compute_Lag_V2 = function(DSET, DAT, LAG_NEAR = 0, LAG_FAR, PLACE, TIME = "BEGIN
 #-------------------Defining Arguments to Loop Over to Construct Different Lag Variables-------------------#
 args = list(
   L1 = c(0,15,30,45,60,90),
-  L2 = c(0,15,30,45,60,90),
-  TIME = c("BEGIN","END")
+  L2 = c(0,15,30,45,60,90)
 )
 crossedArgs = cross_df(args) %>%
   filter(L2 - L1  >0)
 
+
 #---------------------------------Creating Lagged Damage Variables---------------------------------------------------#
 #Defining List of Column Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
+                 .f = ~ str_c("Lag",as.character(.x),as.character(.y),"END",sep = "_"))
+
 
 #Performing the Calculations -- THIS TAKES A LITTLE WHILE DEPENDING ON COMPUTER
-RES =pmap_dfc(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
+RES = map2_dfc(.x = crossedArgs$L1, .y = crossedArgs$L2,
               .f = ~ data.frame(as.numeric(unlist(mclapply(1:nrow(Distinct_Senate_Votes), 
                                              function(x) Compute_Lag_V2(DSET = DAT_CLEAN_NOZEROS, 
                                                                         DAT = Distinct_Senate_Votes$DATE[x], 
-                                                                        LAG_NEAR = ..1, LAG_FAR = ..2, 
-                                                                        PLACE = Distinct_Senate_Votes$State[x], TIME = ..3),
-                                             mc.cores = 8)))))  #CHANGE THIS ARGUMENT TO USE FEWER CORES
+                                                                        LAG_NEAR = .x, LAG_FAR = .y, 
+                                                                        PLACE = Distinct_Senate_Votes$State[x], TIME = "END"),
+                                             mc.cores = 5)))))  #CHANGE THIS ARGUMENT TO USE FEWER CORES
 #Assigning the Corresponding Column Names
 colnames(RES) = names
 
 #-----------------------------Creating Lagged Damage Variables For "Cold" Events--------------------------------------#
 #Defining List of Column Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,"PLACEBO" ,sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
+                 .f = ~ str_c("Lag",as.character(.x),as.character(.y),"END","PLACEBO" ,sep = "_"))
 #Performing Calculation --- THIS TAKES A LITTLE WHILE
-RES_PLACEBO = pmap_dfc(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-              .f = ~ data.frame(as.numeric(unlist(mclapply(1:nrow(Distinct_Senate_Votes),
+RES_PLACEBO = map2_dfc(.x = crossedArgs$L1, .y = crossedArgs$L2, 
+                       .f = ~ data.frame(as.numeric(unlist(mclapply(1:nrow(Distinct_Senate_Votes),
                                              function(x) Compute_Lag_V2(DSET = DAT_CLEAN_PLACEBO, 
                                                                         DAT = Distinct_Senate_Votes$DATE[x], 
-                                                                        LAG_NEAR = ..1, LAG_FAR = ..2,
-                                                                        PLACE = Distinct_Senate_Votes$State[x], TIME = ..3), 
-                                             mc.cores = 8))))) #CHANGE THIS ARGUMENT TO USE FEWER CORES
+                                                                        LAG_NEAR = .x, LAG_FAR = .y,
+                                                                        PLACE = Distinct_Senate_Votes$State[x], TIME = "END"), 
+                                             mc.cores = 5))))) #CHANGE THIS ARGUMENT TO USE FEWER CORES
 #Assigning the Corresponding Column Names
 colnames(RES_PLACEBO) = names
 #-------------------------------Creating Lagged Damage Variables For "Non-Cold" Events--------------------------------#
 #Not-Placebo is Completely Determined (Difference between full and "cold" results)
 #Creating Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,"NOT_PLACEBO" ,sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
+                 .f = ~ str_c("Lag",as.character(.x),as.character(.y),"END","NOT_PLACEBO" ,sep = "_"))
 #Subtract Cold From Full Variables
 RES_NOT_PLACEBO = map_dfc(.x = 1:nrow(crossedArgs), .f = ~  RES[,.x] - RES_PLACEBO[,.x])
 #Assign Column Names
@@ -106,6 +107,8 @@ colnames(RES_NOT_PLACEBO) = names
 Distinct_Senate_Votes = Distinct_Senate_Votes %>%
    bind_cols(RES,RES_PLACEBO,RES_NOT_PLACEBO) %>%
    mutate(DATE = as.factor(DATE))
+
+
 
 #Merge Back Onto Full Senate Dataset
 ALL_LCV_SENATE_MERGE = ALL_LCV_SENATE_MERGE %>%
@@ -129,46 +132,45 @@ Distinct_HOUSE_Votes = ALL_LCV_HOUSE_MERGE %>%
 #Defining Argument List
 args = list(
   L1 = c(0,15,30,45,60,90),
-  L2 = c(0,15,30,45,60,90),
-  TIME = c("BEGIN","END")
+  L2 = c(0,15,30,45,60,90)
 )
 crossedArgs = cross_df(args) %>%
   filter(L2 - L1 >0)
 
 #-----------------------------------------Calculating Lagged Damage Variables for All Storm Types--------------------------------#
 #Defining Column Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
+                 .f = ~ str_c("Lag",as.character(.x),as.character(.y),"END",sep = "_"))
 #Performing Calculations -- THIS TAKES A WHILE!!!
-RES = pmap_dfc(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
+RES = map2_dfc(.x = crossedArgs$L1, .y = crossedArgs$L2,
               .f = ~ data.frame(as.numeric(unlist(mclapply(1:nrow(Distinct_HOUSE_Votes),
                                              function(x) Compute_Lag_V2(DSET = DAT_CLEAN_NOZEROS, 
                                                                         DAT = Distinct_HOUSE_Votes$DATE[x], 
-                                                                        LAG_NEAR = ..1, LAG_FAR = ..2,
-                                                                       PLACE = Distinct_HOUSE_Votes$CODE[x], TIME = ..3),
-                                             mc.cores = 8))))) #USE THIS TO CHANGE NUMBER OF CORES
+                                                                        LAG_NEAR = .x, LAG_FAR = .y,
+                                                                       PLACE = Distinct_HOUSE_Votes$CODE[x], TIME = "END"),
+                                             mc.cores = 6))))) #USE THIS TO CHANGE NUMBER OF CORES
 #Assigning Column Names
 colnames(RES) = names
 
 #----------------------------------------Calculating Lagged Damage Variables For "Cold" Storm Type--------------------------------#
 #Defining Column Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,"PLACEBO", sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2,
+                 .f = ~ str_c("Lag",as.character(.x),as.character(.y),"END","PLACEBO", sep = "_"))
 #Performing Calculation --- THIS TAKES A WHILE
-RES_PLACEBO  = pmap_dfc(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
+RES_PLACEBO  = map2_dfc(.x = crossedArgs$L1, .y = crossedArgs$L2, 
               .f = ~ data.frame(as.numeric(unlist(mclapply(1:nrow(Distinct_HOUSE_Votes),
                                              function(x) Compute_Lag_V2(DSET = DAT_CLEAN_PLACEBO, 
                                                                         DAT = Distinct_HOUSE_Votes$DATE[x], 
                                                                         LAG_NEAR = ..1, LAG_FAR = ..2,
-                                                                       PLACE = Distinct_HOUSE_Votes$CODE[x], TIME = ..3), 
-                                             mc.cores = 8))))) #USE TO CHANGE NUMBER OF CORES
+                                                                       PLACE = Distinct_HOUSE_Votes$CODE[x], TIME = "END"), 
+                                             mc.cores = 6))))) #USE TO CHANGE NUMBER OF CORES
 #Assigning Column Names
 colnames(RES_PLACEBO) = names
 
 #----------------------------------Calculating Lagged Damage Variables For "Non-Cold"-------------------------#
 #Defining Variable Names
-names = pmap_chr(list(..1 = crossedArgs$L1, ..2 = crossedArgs$L2, ..3 = crossedArgs$TIME),
-                 ~ str_c("Lag",as.character(..1),as.character(..2),..3,"NOT_PLACEBO" ,sep = "_"))
+names = map2_chr(.x = crossedArgs$L1, .y = crossedArgs$L2, 
+                 ~ str_c("Lag",as.character(.x),as.character(.y),"END","NOT_PLACEBO" ,sep = "_"))
 #Defined By Subtracting Cold From Total Lagged Variables
 RES_NOT_PLACEBO = map_dfc(.x = 1:nrow(crossedArgs), .f = ~  RES[,.x] - RES_PLACEBO[,.x])
 #Assigning Column Names
@@ -242,6 +244,3 @@ head(Test_Dates_House)
 summary(glm(OCCURED_SENATE ~ DAM_BIN, data = Test_Dates_House))
 
 
-
-
-ifelse(DATE %in% Distinct_HOUSE_Votes$DATE, 1,0),
