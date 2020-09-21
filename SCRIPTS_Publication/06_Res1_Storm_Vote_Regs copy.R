@@ -24,6 +24,8 @@ library(car)
 library(fixest)
 
 #---------------------------------------------Read in Merged Senate Data and Create Binned Damage Variables----------------------------------#
+
+#I CAN JUST TURN THIS INTO AN APPLY FUNCTION
 SENATE_DAT = fread("~/Google Drive/DATA/ECON/CLEAN/SENATE_LAGGED.csv")
 #Construct Necessary Variables for Regressions
 SENATE_DAT = SENATE_DAT %>%
@@ -35,6 +37,19 @@ SENATE_DAT = SENATE_DAT %>%
          BIN_30_G_FiftyMil = ifelse(Lag_0_30_END >log(50000000),1,0),
          BIN_30_FHMil = ifelse( (Lag_0_30_END > log(50000000) & Lag_0_30_END < log(400000000)), 1,0),
          BIN_30_Huge = ifelse(Lag_0_30_END > log(400000000), 1,0)) %>%   #Creating a severity bins for lagged storms
+  mutate(BIN_Thirds = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],0.5),Inf),
+                          labels = c("Zero", "Low", "High")),
+         BIN_FOUR = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],c(1/3,2/3)),Inf),
+                        labels = c("Zero", "Low","Med", "High")),
+         BIN_FIVE = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],c(1/4,1/2,3/4)),Inf),
+                        labels = c("Zero", "Q1", "Q2","Q3", "Q4")),
+         BIN_3_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/3)), labels = 1:3, include.lowest = T)) %>%
+        # BIN_4_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/4)), labels = 1:4, include.lowest = T),
+      #   BIN_5_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/5)), labels = 1:5, include.lowest = T)) %>%
+  mutate(BIN1 = ifelse(BIN_FIVE == "Q1",1,0),
+         BIN2 = ifelse(BIN_FIVE  == "Q2", 1,0),
+         BIN3 = ifelse(BIN_FIVE == "Q3",1,0),
+         BIN4 = ifelse(BIN_FIVE == "Q4", 1,0)) %>%
   mutate(DATE = as.Date(DATE)) %>% #Converting to Date Format
   mutate(SEASON = case_when(
     MON_NUM %in% c(12,1,2,3) ~ "WINTER",
@@ -42,7 +57,16 @@ SENATE_DAT = SENATE_DAT %>%
     MON_NUM %in% c(7,8,9) ~ "SUMMER",
     MON_NUM %in% c(10,11,12) ~ "FALL")) %>% #Season fixed effect
   mutate(PANEL_VAR = 100000*Year + ROLL_CALL)  %>%  #Panel time variables
-  mutate(REP = ifelse(Party == "R",1,0)) #Indicator for party Membership
+  mutate(REP = ifelse(Party == "R",1,0)) %>% #Indicator for party Membership
+  arrange(Member.of.Congress, PANEL_VAR) %>%
+  group_by(Member.of.Congress) %>%
+  mutate(LAG_VOTE1 = dplyr::lag(POS_VOTE, n = 1),
+         LAG_VOTE2 = dplyr::lag(POS_VOTE, n = 2),
+         LAG_VOTE3 = dplyr::lag(POS_VOTE, n = 3),
+         PERC_STORM = sum(Lag_0_30_END_BIN)/n()) %>%
+  ungroup() 
+
+
 
 #---------------------------------------------Read in Merged House Data and Create Variables----------------------------------#
 HOUSE_DAT = fread("~/Google Drive/DATA/ECON/CLEAN/HOUSE_LAGGED.csv")
@@ -56,7 +80,20 @@ HOUSE_DAT = HOUSE_DAT %>%
          BIN_30_G_FiftyMil = ifelse(Lag_0_30_END >log(50000000),1,0),
          BIN_30_FHMil = ifelse( (Lag_0_30_END > log(50000000) & Lag_0_30_END < log(400000000)), 1,0),
          BIN_30_Huge = ifelse(Lag_0_30_END > log(400000000), 1,0)) %>% #Creating a severity bins for lagged storms
+  mutate(BIN_Thirds = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],0.5),Inf),
+                          labels = c("Zero", "Low", "High")),
+         BIN_FOUR = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],c(1/3,2/3)),Inf),
+                        labels = c("Zero", "Low","Med", "High")),
+         BIN_FIVE = cut(Lag_0_30_END, breaks = c(-Inf,0,quantile(Lag_0_30_END[which(Lag_0_30_END>0)],c(1/4,1/2,3/4)),Inf),
+                        labels = c("Zero", "Q1", "Q2","Q3", "Q4")),
+         BIN_3_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/3)), labels = 1:3, include.lowest = T),
+         BIN_4_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/4)), labels = 1:4, include.lowest = T),
+         BIN_5_Even = cut(Lag_0_30_END, breaks = quantile(Lag_0_30_END, probs = seq(0,1,1/5)), labels = 1:5, include.lowest = T)) %>%
   mutate(DATE = as.Date(DATE)) %>%
+  mutate(BIN1 = ifelse(BIN_FIVE == "Q1",1,0),
+         BIN2 = ifelse(BIN_FIVE  == "Q2", 1,0),
+         BIN3 = ifelse(BIN_FIVE == "Q3",1,0),
+         BIN4 = ifelse(BIN_FIVE == "Q4", 1,0)) %>%
   mutate(SEASON = case_when(
     MON_NUM %in% c(12,1,2,3) ~ "WINTER",
     MON_NUM %in% c(4,5,6) ~ "SPRING",
@@ -67,17 +104,49 @@ HOUSE_DAT = HOUSE_DAT %>%
     Member.of.Congress == "Rogers, Mike"  & State == "AL" ~ "Rogers, Mike_AL",
     Member.of.Congress == "Brown, George" & State == "CO" ~ "Brown, George_CO",
     TRUE ~ Member.of.Congress)) %>% #This is an Extra Catch -- didnt seem to get caught the first time
-  mutate(REP = ifelse(Party == "R",1,0)) #Republican indicator
+  mutate(REP = ifelse(Party == "R",1,0)) %>% #Republican indicator
+  mutate(SEASON = ifelse(Policy == "Air.Right.to.Know" & Year == 2000, "SPRING", SEASON)) %>% 
+  #Adding Lags
+  arrange(Member.of.Congress, PANEL_VAR) %>%
+  group_by(Member.of.Congress) %>%
+  mutate(LAG_VOTE1 = dplyr::lag(POS_VOTE, n = 1),
+         LAG_VOTE2 = dplyr::lag(POS_VOTE, n = 2),
+         LAG_VOTE3 = dplyr::lag(POS_VOTE, n = 3),
+         PERC_STORM = sum(Lag_0_30_END_BIN)/n()) %>%
+  ungroup() 
+  
+
+
+#----------------Add a Control for What's Happening Everywhere Else--------------------#
+VALS = HOUSE_DAT %>% distinct(State, PANEL_VAR)
+library(furrr)
+options("future.fork.enable" = TRUE)
+future::plan(multicore(workers = 4)) 
+OTHER_VALS = future_map2_dfr(.x = VALS$State, .y = VALS$PANEL_VAR,
+                             .f = ~ HOUSE_DAT %>% filter(PANEL_VAR == .y) %>%
+                               distinct(State, Lag_0_30_END) %>%
+                               mutate(Lag_0_30_END = exp(Lag_0_30_END) - 1) %>%
+                               summarize(State_VAL = sum(Lag_0_30_END[which(State == .x)]),
+                                         State_OTHER = sum(Lag_0_30_END[which(State != .x)])) %>%
+                               mutate(State = .x,
+                                      PANEL_VAR = .y)) 
+
+
+HOUSE_DAT = HOUSE_DAT %>%
+  left_join(OTHER_VALS, by = c("State", "PANEL_VAR"))
+
+HOUSE_DAT = HOUSE_DAT %>%
+  mutate(State_OTHER = log(State_OTHER + 1))
 
 
 #------------------------------------------------Visualizing Distribution of Lagged Storm Damages-------------------------#
 #Subsets of the Main Datasets
-Test_Sen = SENATE_DAT %>%
+Senate = SENATE_DAT %>%
   select(POS_VOTE,Lag_0_30_END) %>%
-  mutate(Lag_0_30_END = exp(Lag_0_30_END)) 
-Test = HOUSE_DAT %>%
+  mutate(Lag_0_30_END = exp(Lag_0_30_END)-1) 
+House = HOUSE_DAT %>%
   select(POS_VOTE, Lag_0_30_END) %>%
-  mutate(Lag_0_30_END = exp(Lag_0_30_END)) 
+  mutate(Lag_0_30_END = exp(Lag_0_30_END)-1) 
 
 #----------------------------------Censored Histograms of Lagged Storm Damages--------------------------------------------#
 #For House Data
@@ -88,6 +157,24 @@ H_StormDist = gg_outlier_bin(x  = Test,var_name = "Lag_0_30_END",
   xlab("30-Day Lagged Storm Damages") + ylab("Count") +
   theme_minimal() +
   ggtitle("Distribution of Lagged Damages for House")
+
+map(.x = list("Senate", "House"),
+    .f = function(.x){
+     PLOT = eval(parse_expr(.x)) %>%
+        mutate(BINNED = cut(Lag_0_30_END, breaks = c(-Inf, 0, 1000000, 100000000,Inf),
+                            labels = c("Zero", ">=1 Million", "1-100 Million", "<100 Million"),
+                            include.lowest = T)) %>%
+        ggplot() +
+        geom_bar(aes(x = BINNED), col = "black", fill = "black") +
+        theme_minimal() +
+        ggtitle(str_c("Distribution of Lagged Damages - ", .x)) +
+        xlab("Lagged Property Damage") + ylab("Count of Observations")
+    ggsave(PLOT, file = str_c("~/Desktop/ECON Thesis/OUTPUT_Publication/", .x, "_Lag.pdf"),
+           width = 6, height = 6, units = "in")
+    })
+
+
+         
 #For Senate Data
 S_StormDist = gg_outlier_bin(x = Test_Sen,var_name = "Lag_0_30_END", 
                              cut_off_floor = 1000000, cut_off_ceiling = 500000000, 
@@ -116,30 +203,103 @@ Table1 = list(
 ) 
 
 
-etable(Table1, tex = T, coefstat = "se", keepFactors = F, yesNo = "No",
-       fitstat = ~r2, digits = 3, subtitles = c(rep("House",3), rep("Senate", 3)),title = "Test",
-       
+etable(Table1, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, subtitles = c(rep("House",3), rep("Senate", 3)), title = "Test",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/01.Tab1.tex")
 
-esttex(list(Table1), coefstate ="se", yesNoFixed = "No", keepFactors = F,
-       digits = 3)
+#-------------------------------------------------Table 2: Severity and Party Interaction---------------------------------------------#
+Table2 = list(
+  House1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
+  House2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
+  House3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
+  House4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
+  Senate1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
+  Senate2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
+  Senate3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
+  Senate4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + SEASON, data = SENATE_DAT)
+)
+#Hypothesis Tests
+linearHypothesis(Table2$Senate2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0")
+linearHypothesis(Table2$Senate4, "BIN2 - BIN3 = 0")
+linearHypothesis(Table2$House4, "BIN1 - BIN2 = 0")
+linearHypothesis(Table2$House4, "BIN1 - BIN3 = 0")
+linearHypothesis(Table2$House4, "BIN2 - BIN3 = 0")
+
+#Formatting Latex Table
+etable(Table2, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, subtitles = c(rep("House",4), rep("Senate", 4)), title = "Test",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/02.Tab2.tex")
+
+
+#-------------------------------------------Table 3:  Cold and Non-Cold Storms-------------------------------------#
+Table3House = list(
+  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year, data = HOUSE_DAT),
+  Reg2 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = HOUSE_DAT),
+  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year + SEASON, data = HOUSE_DAT),
+  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + SEASON, data = HOUSE_DAT),
+  Reg5 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = HOUSE_DAT)
+)
+Table3Senate = list(
+  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year, data = SENATE_DAT),
+  Reg2 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = SENATE_DAT),
+  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year + SEASON, data = SENATE_DAT),
+  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + SEASON, data = SENATE_DAT),
+  Reg5 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = SENATE_DAT)
+)
+#Writing Tables
+etable(Table3House, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, title = "House-Different Storm Types",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/03.Tab3.tex")
+etable(Table3Senate, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, title = "House-Different Storm Types",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/03.Tab3.tex")
 
 
 
-class(Table1$House1)
+
+#-----------------------------------------------------------Leave-one-out analysis for Main Results----------------------------------#
+UNIQUE_STATES = unique(HOUSE_DAT$State)
+
+Leave_one_out_House = map_dfr(.x = UNIQUE_STATES,
+                              .f = ~ coeftable(feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON , 
+                                                     data = subset(HOUSE_DAT, State != .x))) %>%
+                                mutate(State = .x))
+
+
+#-------------------------------Time Splits-----------------------------------#
+feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP  |
+        Member.of.Congress + Year + SEASON, data = subset(SENATE_DAT, Year <= 2011))
 
 
 
+#------------------------------------Working on Appendices---------------------#
+library(devtools)
+#Using Spec Chart Function from source:
+source("https://github.com/ArielOrtizBobea/spec_chart/blob/master/spec_chart_function.R?raw=TRUE")
 
 
+#Creating a Spec Chart
+#-------01. House Data----------#
+Test = map_dfr(.x = list(HOUSE_DAT, SENATE_DAT),
+    .f =  function(.x){
+      Original = feols(POS_VOTE ~ Lag_0_30_END_BIN  | Member.of.Congress + Year + SEASON, data = .x) 
+      Autocor_House = feols(POS_VOTE ~ Lag_0_30_END_BIN + LAG_VOTE1 | Member.of.Congress + Year + SEASON, data = .x)
+      Month_FE = feols(POS_VOTE ~ Lag_0_30_END_BIN  | Member.of.Congress + Year + MON, data = .x)
+      Restrict = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, 
+                 data = subset(.x, PERC_STORM >=0.1 & PERC_STORM <=0.9))
+      REGS = list(Original, Autocor_House,Month_FE, Restrict)
+      map_dfr(REGS, ~coeftable(.x)[1,1:2]) %>%
+        mutate(Original = c(T,F,F,F),
+               Autocor = c(F,T,F,F),
+               Month = c(F,F,T,F),
+               Restrict = c(F,F,F,T)) }) %>%
+  mutate(House = c(rep(T,4), rep(F,4)),
+         Senate = c(rep(F,4), rep(T,4)))
 
+labels = list("Original", "Last Vote", "Month FE", "Subset_Reps", "House", "Senate")
 
-
-
-
-
-
-
-
+schart(Test,labels, n = c(4,4), highlight = c(1,5), heights = c(1,0.5))
+title("Plot")
 
 
 
@@ -550,14 +710,6 @@ esttex(Table4APP_S, coefstate ="se", yesNoFixed = "No", keepFactors = F,
 L4 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
          model = "within", index = c("Member.of.Congress","PANEL_VAR")),
 
-
-#Leave-one-out analysis
-UNIQUE_STATES = unique(HOUSE_DAT$State)
-
-Leave_one_out_House = map_dfr(.x = UNIQUE_STATES,
-        .f = ~ coeftable(feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON , 
-                               data = subset(HOUSE_DAT, State != .x))) %>%
-          mutate(State = .x))
 
 
 
