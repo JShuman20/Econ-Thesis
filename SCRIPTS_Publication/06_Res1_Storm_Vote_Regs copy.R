@@ -138,6 +138,8 @@ HOUSE_DAT = HOUSE_DAT %>%
 HOUSE_DAT = HOUSE_DAT %>%
   mutate(State_OTHER = log(State_OTHER + 1))
 
+feols(POS_VOTE ~ Lag_0_30_END_BIN + State_OTHER | Member.of.Congress + Year + SEASON, data = HOUSE_DAT)
+feols(POS_VOTE ~ Lag_0_30_END_BIN + State_OTHER  | Member.of.Congress + Year + SEASON, data = subset(HOUSE_DAT, PERC_STORM < 0.9))
 
 #------------------------------------------------Visualizing Distribution of Lagged Storm Damages-------------------------#
 #Subsets of the Main Datasets
@@ -194,12 +196,12 @@ GET_SEs = function(MODEL){
 }
 #-----------------------------------------------------Section 1. Table 1: Build Time Lags for House and Senate---------------------------------------------#
 Table1 = list(
-  House1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  House2 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  House3 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  Senate1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
-  Senate2 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
-  Senate3 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + SEASON, data = SENATE_DAT)  
+  House1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  House2 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  House3 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  Senate1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, data = SENATE_DAT),
+  Senate2 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + MON, data = SENATE_DAT),
+  Senate3 = feols(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + MON, data = SENATE_DAT)  
 ) 
 
 
@@ -209,53 +211,85 @@ etable(Table1, tex = T, coefstat = "se", keepFactors = F,
 
 #-------------------------------------------------Table 2: Severity and Party Interaction---------------------------------------------#
 Table2 = list(
-  House1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  House2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  House3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  House4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + SEASON, data = HOUSE_DAT),
-  Senate1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
-  Senate2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
-  Senate3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + SEASON, data = SENATE_DAT),
-  Senate4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + SEASON, data = SENATE_DAT)
+  House1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  House2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  #House3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  House4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + MON, data = HOUSE_DAT),
+  Senate1 = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, data = SENATE_DAT),
+  Senate2 = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + MON, data = SENATE_DAT),
+ # Senate3 = feols(POS_VOTE ~ BIN1 + BIN2 + BIN3 + BIN4 | Member.of.Congress + Year + MON, data = SENATE_DAT),
+  Senate4 = feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + MON, data = SENATE_DAT)
 )
-#Hypothesis Tests
+#-----Hypothesis Tests------#
+#Total Effects for Columns 2 and 4
 linearHypothesis(Table2$Senate2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0")
-linearHypothesis(Table2$Senate4, "BIN2 - BIN3 = 0")
+linearHypothesis(Table2$House2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0")
+#Pairwise Comparisons for House Democrats
 linearHypothesis(Table2$House4, "BIN1 - BIN2 = 0")
 linearHypothesis(Table2$House4, "BIN1 - BIN3 = 0")
+linearHypothesis(Table2$House4, "BIN1 - BIN4 = 0")
 linearHypothesis(Table2$House4, "BIN2 - BIN3 = 0")
+linearHypothesis(Table2$House4, "BIN2 - BIN4 = 0")
+linearHypothesis(Table2$House4, "BIN3 - BIN4 = 0")
+#Total Effects for House Republicans
+linearHypothesis(Table2$House4, "BIN1 + BIN1:REP = 0")
+linearHypothesis(Table2$House4, "BIN2 + REP:BIN2 = 0")
+linearHypothesis(Table2$House4, "BIN3 + REP:BIN3 = 0")
+linearHypothesis(Table2$House4, "BIN4 + REP:BIN4 = 0")
 
 #Formatting Latex Table
 etable(Table2, tex = T, coefstat = "se", keepFactors = F,
-       fitstat = ~r2, digits = 3, subtitles = c(rep("House",4), rep("Senate", 4)), title = "Test",
+       fitstat = ~r2, digits = 3, subtitles = c(rep("House",3), rep("Senate", 3)), title = "Heterogeneity By Party and Storm Severity",
        file = "~/Desktop/ECON Thesis/OUTPUT_Publication/02.Tab2.tex")
 
 
 #-------------------------------------------Table 3:  Cold and Non-Cold Storms-------------------------------------#
 Table3House = list(
-  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year, data = HOUSE_DAT),
-  Reg2 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = HOUSE_DAT),
-  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year + SEASON, data = HOUSE_DAT),
-  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + SEASON, data = HOUSE_DAT),
+  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year , data = HOUSE_DAT),
+  Reg2 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year , data = HOUSE_DAT),
+  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year , data = HOUSE_DAT),
+  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year , data = HOUSE_DAT),
   Reg5 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = HOUSE_DAT)
 )
+#----------------Hypothesis Test-----------------#
+#Total Effect of Non-Cold for Reps
+linearHypothesis(Table3House$Reg4, "Lag_0_30_END_NOT_PLACEBO_BIN + Lag_0_30_END_NOT_PLACEBO_BIN:REP = 0")
+#Total Effect of Cold for Reps
+linearHypothesis(Table3House$Reg2, "Lag_0_30_END_PLACEBO_BIN + Lag_0_30_END_PLACEBO_BIN:REP = 0")
+
+#Manually Adding Coefficient -- Get's Dropped From Reg5
+Table3House$Reg5
+
 Table3Senate = list(
-  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year, data = SENATE_DAT),
+  Reg1 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN |Member.of.Congress+ Year , data = SENATE_DAT),
   Reg2 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = SENATE_DAT),
-  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year + SEASON, data = SENATE_DAT),
-  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + SEASON, data = SENATE_DAT),
+  Reg3 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN |Member.of.Congress+ Year , data = SENATE_DAT),
+  Reg4 = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year , data = SENATE_DAT),
   Reg5 = feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year, data = SENATE_DAT)
 )
+Table3Senate$Reg5
 #Writing Tables
 etable(Table3House, tex = T, coefstat = "se", keepFactors = F,
        fitstat = ~r2, digits = 3, title = "House-Different Storm Types",
        file = "~/Desktop/ECON Thesis/OUTPUT_Publication/03.Tab3.tex")
+
 etable(Table3Senate, tex = T, coefstat = "se", keepFactors = F,
        fitstat = ~r2, digits = 3, title = "House-Different Storm Types",
        file = "~/Desktop/ECON Thesis/OUTPUT_Publication/03.Tab3.tex")
 
+#-----------------Interpretation Question: How Often do Cold and Non-Cold Co-Occur?------#
+lapply(list(HOUSE_DAT,SENATE_DAT), FUN = function(X){
+    VALS = table(X$Lag_0_30_END_PLACEBO_BIN, X$Lag_0_30_END_NOT_PLACEBO_BIN) 
+    print(str_c("Percentage of Co-Occuring Cold is  ",as.character(VALS[2,2]/(VALS[2,1] + VALS[2,2]))))
+    #Percentage of Cold Storms in the Winter and Spring
+    VALS = table(X$SEASON, X$Lag_0_30_END_PLACEBO_BIN)
+    print(str_c("Percentage of Cold Storms in Winter or Spring is  ", as.character(sum(VALS[c(2,4),2])/sum(VALS[1:4,2]))))
+})
+  
+table(HOUSE_DAT$SEASON, HOUSE_DAT$Lag_0_30_END_PLACEBO_BIN)
 
-
+Test = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = HOUSE_DAT)
+linearHypothesis(Test, "Lag_0_30_END_NOT_PLACEBO_BIN + Lag_0_30_END_NOT_PLACEBO_BIN:REP = 0")
 
 #-----------------------------------------------------------Leave-one-out analysis for Main Results----------------------------------#
 UNIQUE_STATES = unique(HOUSE_DAT$State)
@@ -301,6 +335,47 @@ labels = list("Original", "Last Vote", "Month FE", "Subset_Reps", "House", "Sena
 schart(Test,labels, n = c(4,4), highlight = c(1,5), heights = c(1,0.5))
 title("Plot")
 
+
+
+#---------------------------------------------------------Robustness to Logit Specifications----------------------------------#
+#----------------------Table 1----------------------#
+Table1_Logit = list(
+  House1 = feglm(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, 
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  House2 = feglm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + MON, 
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  House3 = feglm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + MON,
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  Senate1 = feglm(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, 
+                  data = SENATE_DAT, family = binomial(link = "logit")),
+  Senate2 = feglm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN | Member.of.Congress + Year + MON,
+                  data = SENATE_DAT, family = binomial(link = "logit")),
+  Senate3 = feglm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN | Member.of.Congress + Year + MON,
+                  data = SENATE_DAT, family = binomial(link = "logit"))  
+) 
+etable(Table1_Logit, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, title = "Table 1 -- Logit Specs",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/A1.T1_Logit.tex")
+
+#-------------------Table 2----------------------#
+Table2_Logit = list(
+  House1 = feglm(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, 
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  House2 = feglm(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + MON, 
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  House4 = feglm(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + MON, 
+                 data = HOUSE_DAT, family = binomial(link = "logit")),
+  Senate1 = feglm(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + MON, 
+                  data = SENATE_DAT, family = binomial(link = "logit")),
+  Senate2 = feglm(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + MON, 
+                  data = SENATE_DAT, family = binomial(link = "logit")),
+  Senate4 = feglm(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP | Member.of.Congress + Year + MON, 
+                  data = SENATE_DAT, family = binomial(link = "logit"))
+)
+
+etable(Table2_Logit, tex = T, coefstat = "se", keepFactors = F,
+       fitstat = ~r2, digits = 3, title = "Table 1 -- Logit Specs",
+       file = "~/Desktop/ECON Thesis/OUTPUT_Publication/A2.T2_Logit.tex")
 
 
 
