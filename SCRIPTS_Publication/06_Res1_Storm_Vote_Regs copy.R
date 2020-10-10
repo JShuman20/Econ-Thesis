@@ -105,7 +105,8 @@ HOUSE_DAT = HOUSE_DAT %>%
     Member.of.Congress == "Brown, George" & State == "CO" ~ "Brown, George_CO",
     TRUE ~ Member.of.Congress)) %>% #This is an Extra Catch -- didnt seem to get caught the first time
   mutate(REP = ifelse(Party == "R",1,0)) %>% #Republican indicator
-  mutate(SEASON = ifelse(Policy == "Air.Right.to.Know" & Year == 2000, "SPRING", SEASON)) %>% 
+  mutate(SEASON = ifelse(Policy == "Air.Right.to.Know" & Year == 2000, "SPRING", SEASON),
+         MON = ifelse(Policy == "Air.Right.to.Know" & Year == "2000", "Jun", MON)) %>% 
   #Adding Lags
   arrange(Member.of.Congress, PANEL_VAR) %>%
   group_by(Member.of.Congress) %>%
@@ -117,29 +118,6 @@ HOUSE_DAT = HOUSE_DAT %>%
   
 
 
-#----------------Add a Control for What's Happening Everywhere Else--------------------#
-VALS = HOUSE_DAT %>% distinct(State, PANEL_VAR)
-library(furrr)
-options("future.fork.enable" = TRUE)
-future::plan(multicore(workers = 4)) 
-OTHER_VALS = future_map2_dfr(.x = VALS$State, .y = VALS$PANEL_VAR,
-                             .f = ~ HOUSE_DAT %>% filter(PANEL_VAR == .y) %>%
-                               distinct(State, Lag_0_30_END) %>%
-                               mutate(Lag_0_30_END = exp(Lag_0_30_END) - 1) %>%
-                               summarize(State_VAL = sum(Lag_0_30_END[which(State == .x)]),
-                                         State_OTHER = sum(Lag_0_30_END[which(State != .x)])) %>%
-                               mutate(State = .x,
-                                      PANEL_VAR = .y)) 
-
-
-HOUSE_DAT = HOUSE_DAT %>%
-  left_join(OTHER_VALS, by = c("State", "PANEL_VAR"))
-
-HOUSE_DAT = HOUSE_DAT %>%
-  mutate(State_OTHER = log(State_OTHER + 1))
-
-feols(POS_VOTE ~ Lag_0_30_END_BIN + State_OTHER | Member.of.Congress + Year + SEASON, data = HOUSE_DAT)
-feols(POS_VOTE ~ Lag_0_30_END_BIN + State_OTHER  | Member.of.Congress + Year + SEASON, data = subset(HOUSE_DAT, PERC_STORM < 0.9))
 
 #------------------------------------------------Visualizing Distribution of Lagged Storm Damages-------------------------#
 #Subsets of the Main Datasets
@@ -256,6 +234,10 @@ Table3House = list(
 linearHypothesis(Table3House$Reg4, "Lag_0_30_END_NOT_PLACEBO_BIN + Lag_0_30_END_NOT_PLACEBO_BIN:REP = 0")
 #Total Effect of Cold for Reps
 linearHypothesis(Table3House$Reg2, "Lag_0_30_END_PLACEBO_BIN + Lag_0_30_END_PLACEBO_BIN:REP = 0")
+#Total Effect of All 4
+Table3House$Reg5
+linearHypothesis(Table3House$Reg5, "Lag_0_30_END_PLACEBO_BIN + Lag_0_30_END_PLACEBO_BIN:REP +
+                                    Lag_0_30_END_NOT_PLACEBO_BIN + REP:Lag_0_30_END_NOT_PLACEBO_BIN  = 0")
 
 #Manually Adding Coefficient -- Get's Dropped From Reg5
 Table3House$Reg5
@@ -277,36 +259,91 @@ etable(Table3Senate, tex = T, coefstat = "se", keepFactors = F,
        fitstat = ~r2, digits = 3, title = "House-Different Storm Types",
        file = "~/Desktop/ECON Thesis/OUTPUT_Publication/03.Tab3.tex")
 
+
+
+
+#------------------------------------------------------------------------------------------------------------------------#
+#------------------------------------------------Supplemental Questions and Appendix Results-----------------------------#
+#------------------------------------------------------------------------------------------------------------------------#
+
 #-----------------Interpretation Question: How Often do Cold and Non-Cold Co-Occur?------#
 lapply(list(HOUSE_DAT,SENATE_DAT), FUN = function(X){
-    VALS = table(X$Lag_0_30_END_PLACEBO_BIN, X$Lag_0_30_END_NOT_PLACEBO_BIN) 
-    print(str_c("Percentage of Co-Occuring Cold is  ",as.character(VALS[2,2]/(VALS[2,1] + VALS[2,2]))))
-    #Percentage of Cold Storms in the Winter and Spring
-    VALS = table(X$SEASON, X$Lag_0_30_END_PLACEBO_BIN)
-    print(str_c("Percentage of Cold Storms in Winter or Spring is  ", as.character(sum(VALS[c(2,4),2])/sum(VALS[1:4,2]))))
+  VALS = table(X$Lag_0_30_END_PLACEBO_BIN, X$Lag_0_30_END_NOT_PLACEBO_BIN) 
+  print(str_c("Percentage of Co-Occuring Cold is  ",as.character(VALS[2,2]/(VALS[2,1] + VALS[2,2]))))
+  #Percentage of Cold Storms in the Winter and Spring
+  VALS = table(X$SEASON, X$Lag_0_30_END_PLACEBO_BIN)
+  print(str_c("Percentage of Cold Storms in Winter or Spring is  ", as.character(sum(VALS[c(2,4),2])/sum(VALS[1:4,2]))))
 })
-  
+
 table(HOUSE_DAT$SEASON, HOUSE_DAT$Lag_0_30_END_PLACEBO_BIN)
 
-Test = feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = HOUSE_DAT)
+#Are Cold and non-cold results predicated on month fixed effect
+feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = HOUSE_DAT)
+feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = HOUSE_DAT)
+feols(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = SENATE_DAT)
+feols(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP |Member.of.Congress+ Year + MON , data = SENATE_DAT)
 linearHypothesis(Test, "Lag_0_30_END_NOT_PLACEBO_BIN + Lag_0_30_END_NOT_PLACEBO_BIN:REP = 0")
 
 #-----------------------------------------------------------Leave-one-out analysis for Main Results----------------------------------#
 UNIQUE_STATES = unique(HOUSE_DAT$State)
 
-Leave_one_out_House = map_dfr(.x = UNIQUE_STATES,
-                              .f = ~ coeftable(feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON , 
-                                                     data = subset(HOUSE_DAT, State != .x))) %>%
-                                mutate(State = .x))
+library(furrr)
+library(rlang)
+options("future.fork.enable" = TRUE)
+future::plan(multicore(workers = 4)) 
+Leave_one_out_house = future_map_dfr(.x = UNIQUE_STATES,
+                                     .f = ~ coeftable(feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON , 
+                                                            data = subset(HOUSE_DAT, State != .x))) %>%
+                                       rownames_to_column() %>%
+                                       mutate(State = .x))
+
+Leave_one_out_senate = future_map_dfr(.x = unique(SENATE_DAT$State),
+                                      .f = ~ coeftable(feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, 
+                                                             data = subset(SENATE_DAT, State != .x))) %>%
+                                        rownames_to_column() %>%
+                                        mutate(State = .x))
+ggplot(Leave_one_out_house) +
+  geom_histogram(aes(x = Estimate, group = rowname))
+
+Leave_one_out_house %>%
+  filter(str_detect(rowname, "REP", negate = F)) %>%
+  filter(Estimate == max(Estimate) | Estimate == min(Estimate))
 
 
-#-------------------------------Time Splits-----------------------------------#
-feols(POS_VOTE ~ BIN1*REP - REP + BIN2*REP - REP + BIN3*REP - REP + BIN4*REP - REP  |
-        Member.of.Congress + Year + SEASON, data = subset(SENATE_DAT, Year <= 2011))
 
+#----------------Add a Control for What's Happening Everywhere Else--------------------#
+VALS = HOUSE_DAT %>% distinct(State, PANEL_VAR)
+library(furrr)
+options("future.fork.enable" = TRUE)
+future::plan(multicore(workers = 4)) 
+#Construct Value for House Data
+OTHER_VALS = future_map2_dfr(.x = VALS$State, .y = VALS$PANEL_VAR,
+                             .f = ~ HOUSE_DAT %>% filter(PANEL_VAR == .y) %>%
+                               distinct(State, Lag_0_30_END) %>%
+                               mutate(Lag_0_30_END = exp(Lag_0_30_END) - 1) %>%
+                               summarize(State_VAL = sum(Lag_0_30_END[which(State == .x)]),
+                                         State_OTHER = sum(Lag_0_30_END[which(State != .x)])) %>%
+                               mutate(State = .x,
+                                      PANEL_VAR = .y)) 
+#Merge onto House Data
+HOUSE_DAT = HOUSE_DAT %>%
+  left_join(OTHER_VALS, by = c("State", "PANEL_VAR")) %>%
+  mutate(State_OTHER = log(State_OTHER + 1))
+#----------Repeating for Senate Data--------------------#
+VALS = SENATE_DAT %>% distinct(State, PANEL_VAR)
+OTHER_VALS = future_map2_dfr(.x = VALS$State, .y = VALS$PANEL_VAR,
+                             .f = ~ SENATE_DAT %>% filter(PANEL_VAR == .y) %>%
+                               distinct(State, Lag_0_30_END) %>%
+                               mutate(Lag_0_30_END = exp(Lag_0_30_END) - 1) %>%
+                               summarize(State_VAL = sum(Lag_0_30_END[which(State == .x)]),
+                                         State_OTHER = sum(Lag_0_30_END[which(State != .x)])) %>%
+                               mutate(State = .x,
+                                      PANEL_VAR = .y)) 
+SENATE_DAT = SENATE_DAT %>%
+  left_join(OTHER_VALS, by = c("State", "PANEL_VAR")) %>%
+  mutate(State_OTHER = log(State_OTHER + 1))
 
-
-#------------------------------------Working on Appendices---------------------#
+#-------------------Table of Sensitivity Analysis----------------------------#
 library(devtools)
 #Using Spec Chart Function from source:
 source("https://github.com/ArielOrtizBobea/spec_chart/blob/master/spec_chart_function.R?raw=TRUE")
@@ -317,23 +354,134 @@ source("https://github.com/ArielOrtizBobea/spec_chart/blob/master/spec_chart_fun
 Test = map_dfr(.x = list(HOUSE_DAT, SENATE_DAT),
     .f =  function(.x){
       Original = feols(POS_VOTE ~ Lag_0_30_END_BIN  | Member.of.Congress + Year + SEASON, data = .x) 
-      Autocor_House = feols(POS_VOTE ~ Lag_0_30_END_BIN + LAG_VOTE1 | Member.of.Congress + Year + SEASON, data = .x)
-      Month_FE = feols(POS_VOTE ~ Lag_0_30_END_BIN  | Member.of.Congress + Year + MON, data = .x)
       Restrict = feols(POS_VOTE ~ Lag_0_30_END_BIN | Member.of.Congress + Year + SEASON, 
                  data = subset(.x, PERC_STORM >=0.1 & PERC_STORM <=0.9))
-      REGS = list(Original, Autocor_House,Month_FE, Restrict)
+      Other_State = feols(POS_VOTE ~ Lag_0_30_END_BIN + poly(State_OTHER,10) | 
+                            Member.of.Congress + Year + MON, data = .x)
+      Pre_2000 = feols(POS_VOTE ~ Lag_0_30_END_BIN + poly(State_OTHER,10) | 
+                         Member.of.Congress + Year + MON, data = subset(.x, Year < 2000))
+      Post_2000 = feols(POS_VOTE ~ Lag_0_30_END_BIN | 
+                          Member.of.Congress + Year + MON, data = subset(.x, Year >= 2000))
+      #Adding Dem-Specific Effects
+      Original_Dem = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP  | Member.of.Congress + Year + SEASON, data = .x) 
+      Restrict_Dem = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + SEASON, 
+                       data = subset(.x, PERC_STORM >=0.1 & PERC_STORM <=0.9))
+      Other_State_Dem = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP + poly(State_OTHER,10) | 
+                            Member.of.Congress + Year + MON, data = .x)
+      Pre_2000_Dem = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP + poly(State_OTHER,10) | 
+                         Member.of.Congress + Year + MON, data = subset(.x, Year < 2000))
+      Post_2000_Dem = feols(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | 
+                          Member.of.Congress + Year + MON, data = subset(.x, Year >= 2000))
+      REGS = list(Original, Restrict, Other_State, Pre_2000, Post_2000,
+                  Original_Dem, Restrict_Dem, Other_State_Dem, Pre_2000_Dem, Post_2000_Dem)
       map_dfr(REGS, ~coeftable(.x)[1,1:2]) %>%
-        mutate(Original = c(T,F,F,F),
-               Autocor = c(F,T,F,F),
-               Month = c(F,F,T,F),
-               Restrict = c(F,F,F,T)) }) %>%
-  mutate(House = c(rep(T,4), rep(F,4)),
-         Senate = c(rep(F,4), rep(T,4)))
+        mutate(Original = rep(c(T,F,F,F,F),2),
+               Restrict_Reps = rep(c(F,T,F,F,F),2),
+               Other_State = rep(c(F,F,T,F,F),2),
+               Pre_2000 = rep(c(F,F,F,T,F),2),
+               Post_2000 = rep(c(F,F,F,F,T),2))
+                }) %>%
+  mutate(House = c(rep(T,10), rep(F,10)),
+         Senate = c(rep(F,10), rep(T,10)),
+         Total_Coef = rep(c(rep(T,5),rep(F,5)),2),
+         Dem_Coef = rep(c(rep(F,5),rep(T,5)),2))
 
-labels = list("Original", "Last Vote", "Month FE", "Subset_Reps", "House", "Senate")
+labels = list("Original", "Restrict_Reps", "Other State (10th Degree)",
+              "Pre-2000","Post-2000", "House", "Senate", "Total Effect", "Democrat Effect")
 
-schart(Test,labels, n = c(4,4), highlight = c(1,5), heights = c(1,0.5))
+schart(Test,labels, n = c(5,5,5,5), highlight = c(1,6,11,16), 
+       heights = c(1,0.4), ylab = "Coefficients + Approx. 95% CI")
+labs(y = "Coefficient + Approximate 95% CI")
 title("Plot")
+
+
+
+
+
+
+
+
+#-------------------------------------------------------------------Guess at How Many More Votes Might Have Passed--------------------------------#
+#Use a Logit Spec For Prediction Exercise
+MODEL = feglm(POS_VOTE ~ Lag_0_30_END_BIN*REP - REP | Member.of.Congress + Year + MON, 
+              data = HOUSE_DAT, family = binomial(link = "logit"))
+#Excluding Observations Dropped From Logit Regression
+Excludes = HOUSE_DAT %>% group_by(Member.of.Congress) %>% 
+  summarize(Count = n(), 
+            POS = sum(POS_VOTE, na.rm = T),
+            NAS = sum(is.na(POS_VOTE))) %>%
+  ungroup() %>% filter(POS == 0 | POS == Count | POS + NAS == Count)  %>% pull(Member.of.Congress) 
+
+#Fitted Values
+MODEL_FITS = MODEL$fitted.values
+#Making
+MODEL_PREDS = HOUSE_DAT %>%
+  dplyr::select(Member.of.Congress, State, Lag_0_30_END_BIN, POS_VOTE, REP, PANEL_VAR, Year, MON) %>%
+  filter(!is.na(POS_VOTE)) %>%
+  filter(!Member.of.Congress %in% Excludes) %>%
+  #Adding All 1s to Storm Damages
+  mutate(Lag_0_30_END_BIN = 1) %>%
+  #Adding Predictions and Fitted Values
+  mutate(PREDS = predict(MODEL, newdata = .),
+         FITTED = MODEL_FITS) 
+
+library(furrr)
+set.seed(10)
+options("future.fork.enable" = TRUE)
+future::plan(multicore(workers = 4)) 
+PREDS = future_map_dfr(.x = 1:100, .f = function(.x){
+  MODEL_PREDS = MODEL_PREDS %>%
+    rowwise() %>%
+    mutate(PRED_BIN = rbinom(1,1,PREDS)) %>%
+    ungroup() %>%
+    #Producing Counts By Vote
+    group_by(PANEL_VAR) %>%
+    summarise(COUNT = n(), 
+              POS = sum(POS_VOTE, na.rm = T),
+              PRED = sum(PRED_BIN, na.rm = T))  %>%
+    ungroup() %>%
+    mutate(PASS_REAL = (POS > 218),
+           PASS_PRED = (PRED > 218))
+  #Calculating Summary Stats
+  data.frame(VOTES = sum(MODEL_PREDS$POS),
+             PRED_VOTES = sum(MODEL_PREDS$PRED),
+             PASS_REAL = sum(MODEL_PREDS$PASS_REAL),
+             PASS_PRED = sum(MODEL_PREDS$PASS_PRED))
+})
+
+hist(100*(PREDS$PRED_VOTES - PREDS$VOTES)/PREDS$VOTES[1])
+#What Would the Change in Positive Votes Have Been?
+#Slight Decrease in Votes
+sum(MODEL_PREDS$POS) - sum(MODEL_PREDS$PRED)
+
+#How Many More Votes Pass?
+sum(MODEL_PREDS$PASS_REAL) - sum(MODEL_PREDS$PASS_PRED)
+
+
+MODEL_FITS = Table2$House2$fitted.values
+PREDS = rbinom(n = length(MODEL_FITS), 1, prob = MODEL_FITS)
+Test = HOUSE_DAT %>%
+  dplyr::select(Member.of.Congress, State, Lag_0_30_END_BIN, POS_VOTE, REP, PANEL_VAR) %>%
+  filter(!is.na(POS_VOTE)) %>%
+  filter(!Member.of.Congress %in% Excludes) %>%
+  mutate(FITTED = MODEL_FITS) %>%
+  rowwise() %>%
+  mutate(PREDICT = rbinom(1,1,FITTED)) %>%
+  ungroup() %>%
+  group_by(PANEL_VAR) %>%
+  summarise(COUNT = n(), 
+            POS = sum(POS_VOTE, na.rm = T),
+            PRED = sum(PREDICT, na.rm = T))  %>%
+  ungroup() %>%
+  mutate(REAL_NEG = COUNT - POS,
+         PRED_NEG = COUNT - PRED,
+         REAL_PASSES = (POS > REAL_NEG),
+         PRED_PASSES = (PRED > PRED_NEG))
+
+table(Test$REAL_PASSES)
+table(Test$PRED_PASSES)
+
+
 
 
 
@@ -378,290 +526,6 @@ etable(Table2_Logit, tex = T, coefstat = "se", keepFactors = F,
        file = "~/Desktop/ECON Thesis/OUTPUT_Publication/A2.T2_Logit.tex")
 
 
-
-
-#List of Regressions for House of Representatives Building Time Lags
-Table1_House = list(
-  L4 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L1 = plm(POS_VOTE ~ Lag_0_15_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_15_END_BIN + Lag_15_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_15_END_BIN + Lag_15_30_END_BIN + Lag_30_45_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-) 
-#Re-calculating robust se's for these six regressions
-Table1_House_SE = lapply(X = Table1_House, GET_SEs)
-#Latex output for house results
-OUT = stargazer(Table1_House, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table1_House_SE,
-                title = "Storm Damages Over Different Time Lags on Voting",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("0-15","15-30","30-45","0-30","30-60","60-90"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_1.tex", append = TRUE)
-
-#List of Regressions for Senate Building Time Lags
-Table1_Senate = list(
-  L4 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ Lag_0_30_END_BIN + Lag_30_60_END_BIN + Lag_60_90_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L1 = plm(POS_VOTE ~ Lag_0_15_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_15_END_BIN + Lag_15_30_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_15_END_BIN + Lag_15_30_END_BIN + Lag_30_45_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-
-#Calculating Robust se's
-Table1_Senate_SE = lapply(X = Table1_Senate, GET_SEs)
-#Outputting latex table
-OUT = stargazer(Table1_Senate, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table1_Senate_SE,
-                title = "Storm Damages Over Different Time Lags on Voting",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("0-30","30-60","60-90","0-15","15-30","30-45"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_1.tex", append = TRUE)
-
-
-
-#--------------------------------------Section 1 Table 2: Discrete and Continuous Damages-------------------------------------------#
-#List of Regressions For House
-Table2House = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_BIN*Lag_0_30_END - Lag_0_30_END + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ BIN_30_Mil + BIN_30_FiftyMil + BIN_30_FHMil + BIN_30_Huge + factor(Year) + factor(SEASON), data = HOUSE_DAT,
-           model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Test Equality of Coefficients
-linearHypothesis(Table2House$L4, c("BIN_30_FiftyMil - BIN_30_FHMil = 0"), white.adjust = "hc1")
-linearHypothesis(Table2House$L4, c("BIN_30_Huge - BIN_30_Mil = 0"), white.adjust = "hc1")
-linearHypothesis(Table2House$L4, c("BIN_30_Huge - BIN_30_FHMil = 0"), white.adjust = "hc1")
-#Extract robust se's from models
-Table2_House_SE = lapply(X = Table2House, GET_SEs)
-#Output Latex Table
-OUT = stargazer(Table2House, style = "aer", type = "latex", column.sep.width = "5", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table2_House_SE,
-                title = "Heterogeneous Effects By Severity of Storm Damages",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("/> 0", "$<$1 Mil.", "1-50 Mil.", "50-400 Mil.","$>$400 Mil","Interaction"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_2.tex", append = TRUE)
-
-#List of Regressions for Senate
-Table2SENATE = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_BIN*Lag_0_30_END - Lag_0_30_END + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ BIN_30_Mil + BIN_30_FiftyMil + BIN_30_FHMil + BIN_30_Huge + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Test Equality of Coefficients
-linearHypothesis(Table2SENATE$L4, c("BIN_30_FiftyMil - BIN_30_FHMil = 0"), white.adjust = "hc1")
-linearHypothesis(Table2SENATE$L4, c("BIN_30_Huge - BIN_30_Mil = 0"), white.adjust = "hc1")
-linearHypothesis(Table2SENATE$L4, c("BIN_30_Huge - BIN_30_FHMil = 0"), white.adjust = "hc1")
-#Robust Se's
-Table2_SENATE_SE = lapply(X = Table2SENATE, GET_SEs)
-#Outputting Latex Table
-OUT = stargazer(Table2SENATE, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table2_SENATE_SE,
-                title = "Heterogeneous Effects By Severity of Storm Damages",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("$>0$","$<$1 Mil", "1-50 Mil.", "50-400 Mil", "$>$400 Mil.", "Interaction"))
-               
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_2.tex", append = TRUE)
-
-
-#--------------------------------------------------------Section 1 Tables 4 and 5: Party Interaction------------------------------#
-#List of Regressions for House
-Table3House = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_BIN*REP + factor(Year) + factor(SEASON), data = HOUSE_DAT,
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ BIN_30_Mil + BIN_30_FiftyMil + BIN_30_FHMil + BIN_30_Huge + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ BIN_30_Mil*REP + BIN_30_FiftyMil*REP + BIN_30_FHMil*REP + BIN_30_Huge*REP + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Test Equality of Coefficients
-linearHypothesis(Table3House$L6, "BIN_30_Huge + REP:BIN_30_Huge = 0", white.adjust = "hc1")
-#Extracting Robust Se's
-Table3HouseSE = lapply(X = Table3House, GET_SEs)
-#Output Latex Table
-OUT = stargazer(Table3House, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table3HouseSE,
-                title = "Heterogeneity: Severity x Party",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("$>0$","$>$1 Mil.","1-50 Mil.", "50-400 Mil.", "$>$400 Mil.", 
-                                     "$>0$xREP", "$>$1 Mil x REP", "1-50 Mil x REP", "50-400 Mil x REP", "$>$400 Mil x REP"))
-                
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_3.tex", append = TRUE)
-
-#List of Regressions For Senate              
-Table3Senate = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ BIN_30_Mil + BIN_30_FiftyMil + BIN_30_FHMil + BIN_30_Huge + factor(Year) + factor(SEASON), 
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ BIN_30_Mil*REP + BIN_30_FiftyMil*REP + BIN_30_FHMil*REP + BIN_30_Huge*REP + factor(Year) + factor(SEASON), 
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Test Equality of Coefficients
-linearHypothesis(Table3Senate$L2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0", white.adjust = "hc1")
-linearHypothesis(Table3House$L6, "BIN_30_Mil = BIN_30_Huge", white.adjust = "hc1")
-linearHypothesis(Table3Senate$L2, c("Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0"), white.adjust = "hc1")
-linearHypothesis(Table3Senate$L2, "Lag_0_30_END_BIN + Lag_0_30_END_BIN:REP = 0", white.adjust = "hc1")
-linearHypothesis(Table3Senate$L6, "BIN_30_Mil + BIN_30_Mil:REP = 0", white.adjust = "hc1")
-linearHypothesis(Table3Senate$L6, "BIN_30_FiftyMil + REP:BIN_30_FiftyMil = 0", white.adjust = "hc1")
-linearHypothesis(Table3Senate$L6, "BIN_30_Huge + REP:BIN_30_Huge = 0", white.adjust = "hc1")
-#Robust se's
-Table3SenateSE = lapply(X = Table3Senate, GET_SEs)
-#Output Latex Table
-OUT = stargazer(Table3Senate, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table3SenateSE,
-                title = "Heterogeneity: Severity x Party - Senate",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("$>0$","$>$1 Mil.","1-50 Mil.", "50-400 Mil.", "$>$400 Mil.", 
-                                     "$>0$xREP", "$>$1 Mil x REP", "1-50 Mil x REP", "50-400 Mil x REP", "$>$400 Mil x REP"))
-                
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table_3.tex", append = TRUE)
-
-#---------------------------------------------------Section 1 Table 5: Differentiate Types of Storms----------------------------------#
-#List of Tables For House
-Table4House = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = HOUSE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON),
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Robust se's
-Table4HouseSE = lapply(X = Table4House, GET_SEs)
-#Outputting latex table
-OUT = stargazer(Table4House, style = "aer", type = "latex", column.sep.width = "4", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq", "rsq"), se = Table4HouseSE,
-                title = "Cold-Related v. Non-Cold Storms -- House of Representatives",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("Cold $>0$", "Warm $>0$", "Cold $>0$ x Rep", "Warm $>0$ x Rep", "Warm $>0$ x Rep"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table4.tex", append = TRUE)
-
-#List of Regressions for Senate
-Table4Senate = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON), data = SENATE_DAT,
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, 
-           model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), 
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Robust Se's
-Table4SenateSE = lapply(X = Table4Senate, GET_SEs)
-#Output Latex Table
-OUT = stargazer(Table4Senate, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = Table4SenateSE,
-                title = "Cold-Related v. Non-Cold Storms - Senate",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("Cold $>0$", "Warm $>0$", "Cold $>0$ x Rep", "Warm $>0$ x Rep","Warm $>0$ x Rep"))
-cat(paste(OUT, "\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/Table4.tex", append = TRUE)
-
-
-#----------------------------------------Formatting Table for Inclusion in My Poster----------------------------------#
-#List of Regressions
-PosterTable = list(
-  L1 = plm(POS_VOTE ~ Lag_0_30_END_BIN*REP + factor(Year) + factor(SEASON), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ Lag_0_30_END_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L5 = plm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + factor(Year), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L6 = plm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP + factor(Year) + factor(SEASON), data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Standard Errors
-Poster_Table_SE = lapply(PosterTable, GET_SEs)
-#Output Latex Table
-OUT = stargazer(PosterTable, style = "aer", type= "latex", column.sep.width = "1", no.space = T,
-                omit = "factor*", keep.stat = c("n", "adj.rsq"), se = Poster_Table_SE,
-                title = "Effect of Storm Type on Environmental Voting By Party",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("$>0$ Damage (All)", "$>0$ Damage (Cold)", "$>0$ Damage (Non-Cold)",
-                                     "$>0$ Damage (All) x Rep", "$>0$ Damage (Cold) x Rep", "$>0$ Damage (Non-Cold) x Rep")
-                )
-cat(paste(OUT,"\n"), file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/PosterTable.tex", append = T)
-
-
-#-----------------------------------------------------------Corresponding Appendix Tables----------------------------------------------------------#
-#-------------------------01. Sensitivity to Different Definitions of Storm Severity Categories------------------#
-
-#Creating 
-HOUSE_DAT = HOUSE_DAT %>%
-  mutate(ALT_1 = case_when(
-           Lag_0_30_END %in% c(0,NA) ~ "Zero",
-           (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)) ~ "Less_1Mil",
-           (Lag_0_30_END >= log(1000000) & Lag_0_30_END < log(25000000)) ~ "25Mil",
-           (Lag_0_30_END >= log(25000000) & Lag_0_30_END < log(500000000)) ~ "500Mil",
-           Lag_0_30_END > log(500000000) ~ "Huge"),
-        ALT2 = case_when(
-           Lag_0_30_END %in% c(0,NA) ~ "Zero",
-           (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)) ~ "Less_1Mil",
-           (Lag_0_30_END >= log(1000000) & Lag_0_30_END < log(100000000)) ~ "10Mil",
-           (Lag_0_30_END >= log(100000000) & Lag_0_30_END < log(1000000000)) ~ "100Mil",
-           Lag_0_30_END > log(1000000000) ~ "Huge"))
-SENATE_DAT = SENATE_DAT %>%
-  mutate(ALT_1 = case_when(
-           Lag_0_30_END %in% c(0,NA) ~ "Zero",
-          (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)) ~ "Less_1Mil",
-           (Lag_0_30_END >= log(1000000) & Lag_0_30_END < log(25000000)) ~ "25Mil",
-          (Lag_0_30_END >= log(25000000) & Lag_0_30_END < log(500000000)) ~ "500Mil",
-          Lag_0_30_END > log(500000000) ~ "Huge"),
-        ALT2 = case_when(
-          Lag_0_30_END %in% c(0,NA) ~ "Zero",
-          (Lag_0_30_END > 0 & Lag_0_30_END < log(1000000)) ~ "Less_1Mil",
-          (Lag_0_30_END >= log(1000000) & Lag_0_30_END < log(100000000)) ~ "10Mil",
-          (Lag_0_30_END >= log(100000000) & Lag_0_30_END < log(1000000000)) ~ "100Mil",
-          Lag_0_30_END > log(1000000000) ~ "Huge"))
-#Running Regressions For Both Branches
-App1 = list(
-  L1 = plm(POS_VOTE ~ I(ALT_1 == "Less_1Mil") + I(ALT_1 == "25Mil") + I(ALT_1 == "500Mil") + I(ALT_1 == "Huge") + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L2 = plm(POS_VOTE ~ I(ALT2 == "Less_1Mil") + I(ALT2 == "10Mil") + I(ALT2 == "100Mil") + I(ALT2 == "Huge") + factor(Year) + factor(SEASON), 
-           data = HOUSE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L3 = plm(POS_VOTE ~ I(ALT_1 == "Less_1Mil") + I(ALT_1 == "25Mil") + I(ALT_1 == "500Mil") + I(ALT_1 == "Huge") + factor(Year) + factor(SEASON), 
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-  L4 = plm(POS_VOTE ~ I(ALT2 == "Less_1Mil") + I(ALT2 == "10Mil") + I(ALT2 == "100Mil") + I(ALT2 == "Huge") + factor(Year) + factor(SEASON), 
-           data = SENATE_DAT, model = "within", index = c("Member.of.Congress","PANEL_VAR"))
-)
-#Extracting Standard Errors
-App1SE = lapply(X = App1, GET_SEs)
-#Output Latex Tables
-OUT = stargazer(App1, style = "aer", type = "latex", column.sep.width = "1", no.space = TRUE,
-                omit = "factor*", keep.stat = c("n","adj.rsq"), se = App1SE,
-                title = "Sensitivity to Different Storm Damage Bin Definitions",
-                dep.var.labels = "Positive Environmental Vote",
-                covariate.labels = c("Less 1 Mil", "1-25 Mil", "25-500 Mil", "More 500 Mil", "Less 1 Mil", "1-100 Mil", "100 Mil - 1 Bil", "More 1 Bil"),
-                out = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/App1_Boundaries.tex")
-#----------------------02. Robustness to Logit Specification-----------------------------------------------#
-#NOTE: Using "feglm" command -- as best as I can tell default standard errors by default match STATA's robust option
 
 #-----------------01A. Replicating Table 1:----------------------------
 #For House
@@ -757,34 +621,5 @@ Table4APP_H = list(
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
   L3 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON)  | Member.of.Congress, 
              data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L4 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON)  | Member.of.Congress, 
-             data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP+ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON) | Member.of.Congress, 
-             data = HOUSE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")))
-
-esttex(Table4APP_H, coefstate ="se", yesNoFixed = "No", keepFactors = F,
-       file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/LOGIT/T4.Logit.tex")
-#For Senate
-Table4APP_S = list(
-  L1 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN + factor(Year)  | Member.of.Congress, 
-             data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L2 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP - REP + factor(Year) | Member.of.Congress, 
-             data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L3 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN + factor(Year) + factor(SEASON)  | Member.of.Congress, 
-             data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L4 = feglm(POS_VOTE ~ Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON)  | Member.of.Congress, 
-             data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit")),
-  L5 = feglm(POS_VOTE ~ Lag_0_30_END_PLACEBO_BIN*REP + Lag_0_30_END_NOT_PLACEBO_BIN*REP - REP + factor(Year) + factor(SEASON) | Member.of.Congress, 
-             data = SENATE_DAT, panel.id = c("Member.of.Congress", "PANEL_VAR"), family = binomial("logit"))
-)
-esttex(Table4APP_S, coefstate ="se", yesNoFixed = "No", keepFactors = F,
-       file = "~/Desktop/ECON Thesis/OUTPUT/STORM_ON_VOTE/LOGIT/T4.Logit.tex")
-
-
-
-L4 = plm(POS_VOTE ~ Lag_0_30_END_BIN + factor(Year) + factor(SEASON), data = HOUSE_DAT, 
-         model = "within", index = c("Member.of.Congress","PANEL_VAR")),
-
-
 
 
